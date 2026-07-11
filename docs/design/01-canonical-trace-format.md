@@ -45,6 +45,9 @@ Modeled on the OpenAI chat-completions message shape, plus TraceLabel extensions
 }
 ```
 
+Unknown message-level keys are handled the same way as unknown top-level keys (§2):
+preserved into that message's `raw` on import, warned once per file, never fatal.
+
 ### Role semantics
 
 | Role | Meaning | Labelable by default |

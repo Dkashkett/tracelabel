@@ -14,12 +14,16 @@ tracelabel export  [--task NAME] [--db PATH] [--format jsonl|csv] [--joined]
                    [--out PATH] [--status labeled|skipped|all]
 tracelabel tasks   list [--db PATH]
 tracelabel suggest [TARGET] [--task NAME] [--db PATH] [--limit N] [--overwrite] [--concurrency N]
-tracelabel demo    [--port N]
+tracelabel demo    [--port N] [--no-browser]
 ```
 
 `TARGET` is a `.yaml`/`.yml` config **or** a data file (`.jsonl`/`.json`). If it's a data
 file, an implicit empty config is assumed (all defaults). The project directory (where
 `.tracelabel/` lives) is the directory containing TARGET.
+
+For `serve` and `suggest`, `TARGET` may be omitted: the CLI then looks for `./config.yaml`
+in the current directory and uses it if present, otherwise exits with the "No data file
+given" error (§9, exit 1).
 
 ## 2. `serve` (the main verb)
 
@@ -112,7 +116,8 @@ Batch pre-annotation (08). Requires the `[ai]` extra; if litellm is missing:
 Copies bundled sample traces (packaged data: ~25 realistic agent traces incl. tool calls, a
 JSON doc, an HTML doc) into a temp project and runs `serve` with the zero-config default.
 This is the README GIF and the entire 15-second pitch: `uvx tracelabel demo`, browser opens,
-`j` `1` `Enter` works immediately.
+`j` `1` `Enter` works immediately. `--no-browser` suppresses the browser auto-open (for
+tmux/remote users and the CI e2e smoke, which drives the server directly).
 
 ## 9. Exit codes & conventions
 
