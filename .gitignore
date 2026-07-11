@@ -36,6 +36,13 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
+# tracelabel runtime/build artifacts
+src/tracelabel/static/
+frontend/node_modules/
+frontend/dist/
+.tracelabel/
+*.db
+
 # OS/editor
 .DS_Store
 .idea/
