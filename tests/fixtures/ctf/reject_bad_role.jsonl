@@ -1,0 +1,1 @@
+{"id":"badrole","messages":[{"role":"user","content":"hi"},{"role":"function","tool_call_id":"call_abc","content":"{...}"}]}
