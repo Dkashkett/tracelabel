@@ -1,0 +1,11 @@
+{
+  "id": "sess_1",
+  "appName": "demo",
+  "userId": "u1",
+  "events": [
+    {"author": "user", "invocationId": "inv1", "content": {"parts": [{"text": "What's the weather in Paris?"}]}},
+    {"author": "planner", "invocationId": "inv2", "content": {"parts": [{"text": "Let me check.", "function_call": {"id": "c1", "name": "get_weather", "args": {"city": "Paris"}}}]}},
+    {"author": "planner", "invocationId": "inv2", "content": {"parts": [{"function_response": {"id": "c1", "name": "get_weather", "response": {"temp_c": 18}}}]}},
+    {"author": "responder", "invocationId": "inv3", "content": {"parts": [{"text": "It's 18°C in Paris."}]}}
+  ]
+}

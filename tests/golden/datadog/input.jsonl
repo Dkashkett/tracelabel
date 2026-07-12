@@ -1,0 +1,5 @@
+{"trace_id":"ta","span_id":"s1","start_ns":100,"duration":5,"meta":{"kind":"llm","input":{"messages":[{"role":"user","content":"Hi"}]},"output":{"messages":[{"role":"assistant","content":"Hello!"}]}}}
+{"trace_id":"ta","span_id":"s2","start_ns":200,"duration":3,"meta":{"kind":"tool","name":"search","input":{"value":"weather"},"output":{"value":"sunny"}}}
+{"trace_id":"ta","span_id":"s3","start_ns":300,"duration":4,"meta":{"kind":"llm","input":{"messages":[{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello!"}]},"output":{"messages":[{"role":"assistant","content":"It's sunny."}]}}}
+{"trace_id":"tb","span_id":"s4","start_ns":50,"duration":10,"meta":{"kind":"workflow","custom":"x"}}
+{"trace_id":"tb","span_id":"s5","start_ns":60,"meta":{"kind":"llm","input":{"messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"2+2?"}]},"output":{"messages":[{"role":"assistant","content":"4"}]}}}
