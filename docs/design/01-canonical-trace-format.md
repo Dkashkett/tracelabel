@@ -6,7 +6,10 @@ any code that touches it.**
 
 ## 1. File shape
 
-A dataset is a UTF-8 **JSONL** file: one JSON object per line, one object per **trace**.
+A dataset is a UTF-8 **JSONL** file: one JSON object per line, one object per **line item**.
+Each line item is **either** a conversation trace (§2, has `messages`) **or** a document (§5,
+has `content` and no `messages`) — two honest shapes, dispatched by key presence, not a shared
+schema.
 
 ## 2. Trace object
 
@@ -29,7 +32,7 @@ Modeled on the OpenAI chat-completions message shape, plus TraceLabel extensions
 
 ```jsonc
 {
-  "role": "assistant",            // REQUIRED: "system" | "user" | "assistant" | "tool" | "document"
+  "role": "assistant",            // REQUIRED: "system" | "user" | "assistant" | "tool"
   "content": <Content>,           // REQUIRED (may be "" only for assistant msgs that carry tool_calls)
   "tool_calls": [                 // OPTIONAL, assistant role only
     {
@@ -56,7 +59,9 @@ preserved into that message's `raw` on import, warned once per file, never fatal
 | `user` | Human/user input | no |
 | `assistant` | Agent output (may carry `tool_calls`) | **yes** |
 | `tool` | Tool result, must set `tool_call_id` when known | no |
-| `document` | Freeform text/JSON/HTML content in a single-turn trace | **yes** |
+
+Freeform content (text/JSON/HTML/Markdown) is not a message role — it's a **document** (§5),
+a distinct top-level shape with zero turns.
 
 Tool calls are represented **inline on the assistant turn** (`tool_calls`), with results as
 separate `tool` turns — never as synthetic assistant turns. This is the decision agent traces
@@ -96,11 +101,31 @@ def detect_content_type(s: str) -> str:
 
 Adapters may override detection explicitly. Parts arrays store `content_type = "parts"`.
 
-## 5. Documents (freeform text / JSON / HTML)
+## 5. Documents (freeform text / JSON / HTML / Markdown)
 
-A document is a trace with exactly one message of role `document`. `tracelabel import` accepts
-bare documents and wraps them (see 07). This gives documents and conversations one rendering
-and one labeling path.
+A document is its own top-level shape, not a message:
+
+```jsonc
+{
+  "format_version": 1,                  // OPTIONAL int, same rule as §2
+  "id": "notes.md",                     // OPTIONAL string. See identity rules (§6).
+  "source": "documents",                // OPTIONAL string, set by adapters/directory scan
+  "metadata": { "path": "docs/notes.md" }, // OPTIONAL object
+  "content": "# Title\n\nBody text.",   // REQUIRED string, verbatim
+  "content_type": "markdown",           // OPTIONAL: "text" | "json" | "html" | "markdown"; defaults to "text"
+  "raw": { ... }                        // OPTIONAL adapter passthrough
+}
+```
+
+A line is parsed as a document iff it has a `content` key and **no** `messages` key (§7 rule 1).
+Storage-wise a document is a trace with `content`/`content_type` set and **zero turns** — it
+flows through queue, counts, and trace-level annotations exactly like a conversation trace, but
+has nothing to render turn-by-turn. `content_type` adds `markdown` on top of the turn
+`ContentType` set (§4) because Markdown is a document-only rendering concern; conversation
+turns never carry it (assistant markdown still renders as `text`, verbatim).
+
+`tracelabel import` also accepts a bare string per JSONL line (content_type defaults to
+`"text"`) or a directory of `.md`/`.txt`/`.html` files (07 §4) as documents.
 
 ## 6. Identity & hashing (normative)
 
@@ -113,15 +138,24 @@ and one labeling path.
 - **Turn id**: `"{trace_id}#{index}"` where `index` is the 0-based position in `messages`.
   This string is the annotation `target_id` for turn-level tasks. It is deterministic and
   survives re-import and db merges.
+- **`document.id`**: if the source provides `id`, it is used **verbatim** (the directory scan
+  sets it to the filename, `#` sanitized to `_`, since turn ids use `#` as a separator).
+  Otherwise derived: `id = "d_" + sha256(content)[:32]`.
+- **document `content_hash`**: `sha256_hex(canonical_json({"content": content, "content_type":
+  content_type}))` — content_type participates so an explicit content_type change is a
+  detectable content change, not silently ignored.
 
 ## 7. Validation rules (importer MUST enforce)
 
-1. `messages` present, non-empty, every element has a valid `role` and a `content` key.
-2. `tool_calls` only on `assistant`; `tool_call_id` only on `tool`.
-3. `content` may be `""` only when `tool_calls` is present and non-empty.
-4. A `document` role may only appear in single-message traces.
+1. A line with a `content` key and no `messages` key is validated as a **document**: `content`
+   must be a string, and `content_type`, if present, must be one of `text`/`json`/`html`/`markdown`.
+   Otherwise it's validated as a conversation trace (rules 2–4 below).
+2. `messages` present, non-empty, every element has a valid `role` and a `content` key.
+3. `tool_calls` only on `assistant`; `tool_call_id` only on `tool`.
+4. `content` may be `""` only when `tool_calls` is present and non-empty.
 5. `format_version`, if present, must equal 1.
-6. Duplicate `id` **within one file** is a hard error (points at both line numbers).
+6. Duplicate `id` **within one file** is a hard error (points at both line numbers), across
+   both traces and documents.
 
 On any line failure: report `file:line`, the failing rule, and a **shown-fixed example** of that
 line (see 07 §5). Default is fail-fast; `--skip-invalid` imports valid lines and prints a summary.
@@ -142,7 +176,13 @@ line (see 07 §5). Default is fail-fast; `--skip-invalid` imports valid lines an
 ### Freeform HTML document
 
 ```json
-{"id":"page_17","messages":[{"role":"document","content":"<html><body><h1>Refund policy</h1>...</body></html>"}]}
+{"id":"page_17","content":"<html><body><h1>Refund policy</h1>...</body></html>","content_type":"html"}
+```
+
+### Bare document (content_type defaults to "text")
+
+```json
+"Just a plain line of text."
 ```
 
 ## 9. Versioning policy

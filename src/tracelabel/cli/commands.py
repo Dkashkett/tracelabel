@@ -135,7 +135,8 @@ class ImportCommand:
         skip_invalid: bool,
         as_documents: bool,
     ) -> ImportSummary:
-        db_path = database_path or default_db_path(path.parent)
+        project_dir = path if path.is_dir() else path.parent
+        db_path = database_path or default_db_path(project_dir)
         with Database(db_path) as database:
             summary = _import_service(database).import_file(
                 path,

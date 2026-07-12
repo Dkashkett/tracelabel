@@ -227,6 +227,53 @@ def test_joined_trace_level(conn, tmp_path):
     ]
 
 
+def test_joined_trace_level_document(conn, tmp_path):
+    conn.traces.import_document(
+        {
+            "id": "d1",
+            "content": "# Title\n\nBody.",
+            "content_type": "markdown",
+            "metadata": {"path": "d1.md"},
+        },
+        "documents",
+    )
+    cfg = make_cfg(tmp_path, name="doctask", level="trace")
+    conn.tasks.open(cfg, assume_yes=True)
+    conn.annotations.upsert_annotation(
+        task="doctask",
+        target_type="trace",
+        target_id="d1",
+        status="labeled",
+        values={"verdict": "pass"},
+        annotator="alice",
+        schema_hash="h1",
+        prefill_model=None,
+    )
+    out = tmp_path / "out.jsonl"
+    export_annotations(conn, "doctask", "jsonl", joined=True, out=out)
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["turn_index"] is None
+    assert row["trace_id"] == "d1"
+    assert row["content"] == "# Title\n\nBody."
+    assert row["content_type"] == "markdown"
+    assert "messages" not in row
+    assert row["trace_metadata"] == {"path": "d1.md"}
+
+    out_csv = tmp_path / "out.csv"
+    export_annotations(conn, "doctask", "csv", joined=True, out=out_csv)
+    with out_csv.open(newline="") as f:
+        reader = csv.DictReader(f)
+        assert "messages" in reader.fieldnames
+        assert "content" in reader.fieldnames
+        assert "content_type" in reader.fieldnames
+        csv_row = next(reader)
+    assert csv_row["content"] == "# Title\n\nBody."
+    assert csv_row["content_type"] == "markdown"
+    assert csv_row["messages"] == ""
+
+
 # EXP-04
 
 

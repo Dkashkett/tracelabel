@@ -39,19 +39,25 @@ def acquire_lock(project_dir):
 -- version: PRAGMA user_version = 1
 
 CREATE TABLE traces (
-    id            TEXT PRIMARY KEY,            -- CTF trace id (user-provided or t_<hash32>)
-    content_hash  TEXT NOT NULL,               -- full sha256 hex of canonical_json(messages)
-    source        TEXT,                        -- 'jsonl' | 'adk' | 'datadog' | ...
+    id            TEXT PRIMARY KEY,            -- CTF trace/document id (user-provided, t_<hash32>, or d_<hash32>)
+    content_hash  TEXT NOT NULL,               -- trace: sha256 of canonical_json(messages); document: sha256 of canonical_json({content, content_type})
+    source        TEXT,                        -- 'jsonl' | 'adk' | 'datadog' | 'documents' | ...
     metadata      TEXT NOT NULL DEFAULT '{}',  -- JSON
     raw           TEXT,                        -- JSON passthrough, nullable
-    imported_at   TEXT NOT NULL                -- ISO-8601 UTC
+    imported_at   TEXT NOT NULL,               -- ISO-8601 UTC
+    content       TEXT,                        -- NULL for conversation traces; set for documents
+    content_type  TEXT CHECK (content_type IS NULL OR content_type IN ('text','json','html','markdown'))
 );
+
+-- A trace IS a document iff content IS NOT NULL. Document traces have zero turns; there is
+-- no separate "kind" column — content presence is the only signal, and it is enforced by
+-- which insert path is used (import_trace vs import_document, §4), never mixed.
 
 CREATE TABLE turns (
     id            TEXT PRIMARY KEY,            -- "{trace_id}#{idx}"
     trace_id      TEXT NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
     idx           INTEGER NOT NULL,            -- 0-based position
-    role          TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool','document')),
+    role          TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool')),
     content       TEXT NOT NULL,               -- verbatim string, or JSON-serialized parts array
     content_type  TEXT NOT NULL CHECK (content_type IN ('text','json','html','parts')),
     tool_calls    TEXT,                        -- JSON array, nullable, assistant only
@@ -68,7 +74,7 @@ CREATE TABLE tasks (
     level           TEXT NOT NULL CHECK (level IN ('turn','trace')),
     schema_hash     TEXT NOT NULL,             -- sha256 hex of canonical resolved fields (see 03 §6)
     resolved_schema TEXT NOT NULL,             -- JSON: the resolved field list, verbatim
-    label_roles     TEXT NOT NULL,             -- JSON array, e.g. ["assistant","document"]
+    label_roles     TEXT NOT NULL,             -- JSON array, e.g. ["assistant"]
     shuffle_seed    INTEGER,                   -- NULL = sequential order
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
@@ -162,6 +168,26 @@ def import_trace(conn, ctf: dict, source: str, on_conflict: str = "fail"):
                           json_or_null(m.get("tool_calls")), m.get("tool_call_id"),
                           m.get("name"), json(m.get("metadata", {})),
                           json_or_null(m.get("raw"))))
+    return "inserted"
+```
+
+Documents share the same conflict handling (same id, different content hash → fail/skip) but
+insert straight into `traces` with `content`/`content_type` set and write **no turns**:
+
+```python
+def import_document(conn, doc: dict, source: str, on_conflict: str = "fail"):
+    did   = doc.get("id") or f"d_{sha256(doc['content'])[:32]}"
+    chash = sha256_hex(canonical_json({"content": doc["content"], "content_type": doc.get("content_type")}))
+
+    existing = conn.execute("SELECT content_hash FROM traces WHERE id=?", (did,)).fetchone()
+    if existing:
+        return _handle_existing(did, chash, existing, on_conflict)   # same fold as import_trace
+
+    with conn:
+        conn.execute("INSERT INTO traces (id, content_hash, source, metadata, raw, imported_at, "
+                     "content, content_type) VALUES (?,?,?,?,?,?,?,?)",
+                     (did, chash, source, json(doc.get("metadata", {})),
+                      json_or_null(doc.get("raw")), now_iso(), doc["content"], doc.get("content_type")))
     return "inserted"
 ```
 

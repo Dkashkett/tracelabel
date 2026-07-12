@@ -63,11 +63,6 @@ def _langsmith_output(outputs: Any) -> Any:
 
 
 def _map(value: Any) -> tuple[Json, list[str]]:
-    if isinstance(value, str):
-        return {
-            "messages": [{"role": "document", "content": value}],
-            "source": "loose",
-        }, ["interpreted plain strings as documents"]
     if isinstance(value, list):
         return _finish(value, ["interpreted a bare message list as a trace"], None)
     if isinstance(value, dict):

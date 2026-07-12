@@ -1,0 +1,3 @@
+"bare string doc"
+{"content": "# Title\n\nBody.", "id": "readme", "content_type": "markdown"}
+{"content": "just meta", "metadata": {"path": "notes.txt"}}

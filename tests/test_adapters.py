@@ -10,8 +10,9 @@ from tracelabel.imports.adapters.adk import AdkAdapter
 from tracelabel.imports.adapters.base import AdapterRegistry
 from tracelabel.imports.adapters.ctf import CtfAdapter
 from tracelabel.imports.adapters.datadog import DatadogAdapter
+from tracelabel.imports.adapters.documents import DocumentsAdapter
 from tracelabel.imports.adapters.loose import LooseAdapter
-from tracelabel.imports.parsing import iter_source as parse_source
+from tracelabel.imports.parsing import iter_target as parse_target
 from tracelabel.imports.service import ImportService
 
 GOLDEN = Path(__file__).parent / "golden"
@@ -21,8 +22,8 @@ def detect(values):
     return AdapterRegistry.default().detect(values)
 
 
-def iter_source(path, from_="auto", as_documents=False):
-    return parse_source(
+def iter_target(path, from_="auto", as_documents=False):
+    return parse_target(
         path,
         AdapterRegistry.default(),
         from_=from_,
@@ -74,14 +75,28 @@ def test_detect_priority_order():
     adk = {"events": [{"author": "user", "invocationId": "i"}]}
     dd = {"trace_id": "t", "meta": {"input": {"messages": []}}}
     loose = {"conversation": [{"role": "user", "content": "hi"}]}
+    doc_string = "just some freeform text"
+    doc_obj = {"content": "hi", "id": "d1"}
 
     assert isinstance(detect([ctf]), CtfAdapter)
     assert isinstance(detect([adk]), AdkAdapter)
     assert isinstance(detect([dd]), DatadogAdapter)
+    assert isinstance(detect([doc_string]), DocumentsAdapter)
+    assert isinstance(detect([doc_obj]), DocumentsAdapter)
     assert isinstance(detect([loose]), LooseAdapter)
 
     # ctf wins over loose when both could plausibly match (priority order)
     assert isinstance(detect([ctf, loose]), CtfAdapter)
+    # documents wins over loose for bare strings (documents is earlier in priority order)
+    assert isinstance(detect([doc_string, loose]), DocumentsAdapter)
+
+    # a dict carrying "messages" or "role" must never be swallowed as a document
+    trace_like = {
+        "content": "not actually a document",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    assert not DocumentsAdapter().sniff([trace_like])
+    assert isinstance(detect([trace_like]), CtfAdapter)  # ctf still wins overall
 
 
 def test_registry_honors_injected_order_and_returns_fresh_adapters():
@@ -196,7 +211,7 @@ def test_golden_datadog():
 
 def test_loose_bare_message_list(tmp_path):
     path = write_lines(tmp_path / "d.jsonl", [[{"role": "user", "content": "hi"}]])
-    ((line_no, ctf),) = list(iter_source(path))
+    ((_, _, ctf),) = list(iter_target(path).items)
     assert ctf == {"messages": [{"role": "user", "content": "hi"}], "source": "loose"}
 
 
@@ -216,7 +231,7 @@ def test_loose_alias_keys(tmp_path, conn):
             {"turns": [{"role": "user", "content": "c"}, {"role": "assistant", "content": "d"}]},
         ],
     )
-    traces = [ctf for _, ctf in iter_source(path)]
+    traces = [ctf for _, _, ctf in iter_target(path).items]
     assert traces[0]["messages"][0] == {"role": "user", "content": "a"}
     assert "conversation" not in traces[0]
 
@@ -227,15 +242,17 @@ def test_loose_alias_keys(tmp_path, conn):
 
 
 # ── ADP-06 ──────────────────────────────────────────────────────────────────
+# A bare string line no longer maps to a `role: "document"` message (that role was
+# removed from the message Role enum). It now auto-detects as a DocumentsAdapter
+# document; see test_golden_documents and the "documents" tests below.
 
 
-def test_loose_plain_string_document(tmp_path):
+def test_bare_string_line_auto_detects_as_document(tmp_path):
     path = write_lines(tmp_path / "d.jsonl", ["just some freeform text"])
-    ((_, ctf),) = list(iter_source(path))
-    assert ctf == {
-        "messages": [{"role": "document", "content": "just some freeform text"}],
-        "source": "loose",
-    }
+    plan = iter_target(path)
+    assert plan.adapter is not None and plan.adapter.name == "documents"
+    ((_, _, doc),) = list(plan.items)
+    assert doc == {"content": "just some freeform text", "content_type": "text"}
 
 
 # ── ADP-07 ──────────────────────────────────────────────────────────────────
@@ -253,7 +270,7 @@ def test_loose_role_synonyms(tmp_path, conn):
             ]
         ],
     )
-    ((_, ctf),) = list(iter_source(path))
+    ((_, _, ctf),) = list(iter_target(path).items)
     roles = [m["role"] for m in ctf["messages"]]
     assert roles == ["user", "assistant", "assistant", "assistant"]
     assert "speaker" not in ctf["messages"][0]
@@ -277,7 +294,7 @@ def test_loose_langsmith(tmp_path):
             }
         ],
     )
-    ((_, ctf),) = list(iter_source(path))
+    ((_, _, ctf),) = list(iter_target(path).items)
     assert [m["role"] for m in ctf["messages"]] == ["user", "assistant"]
     assert ctf["messages"][1]["content"] == "4"
     assert ctf["raw"]["run_id"] == "r1"  # extras → raw
@@ -289,7 +306,7 @@ def test_loose_langsmith(tmp_path):
 def test_undetectable_input_dies_with_help(tmp_path):
     path = write_lines(tmp_path / "d.jsonl", [{"foo": "bar", "baz": 1}])
     with pytest.raises(UserError) as ei:
-        list(iter_source(path))
+        list(iter_target(path).items)
     assert "docs/trace-format.md" in str(ei.value)
 
 
@@ -336,26 +353,125 @@ def test_skip_invalid_summary(tmp_path, conn):
 # ── ADP-12 ──────────────────────────────────────────────────────────────────
 
 
-def test_as_documents_modes(tmp_path):
-    jsonl = tmp_path / "docs.jsonl"
-    jsonl.write_text('"a plain string"\n{"role":"user","content":"x"}\n', encoding="utf-8")
-    docs = [ctf for _, ctf in iter_source(jsonl, as_documents=True)]
-    assert docs[0]["messages"][0]["content"] == "a plain string"
-    # a non-string line keeps its raw text verbatim
-    assert docs[1]["messages"][0]["content"] == '{"role":"user","content":"x"}'
-    assert all(m["messages"][0]["role"] == "document" for m in docs)
+def test_golden_documents():
+    values = read_jsonl(GOLDEN / "documents" / "input.jsonl")
+    produced = [next(iter(DocumentsAdapter().to_ctf(value))) for value in values]
+    expected = read_jsonl(GOLDEN / "documents" / "expected.jsonl")
+    assert produced == expected
 
-    txt = tmp_path / "page.txt"
-    body = "Line one.\nLine two.\n\n  trailing spaces   \n"
-    txt.write_text(body, encoding="utf-8")
-    ((_, whole),) = list(iter_source(txt, as_documents=True))
-    assert whole["messages"][0]["content"] == body  # byte-for-byte, incl. trailing whitespace
+    assert produced[0]["content_type"] == "text"  # bare string defaults to text
+    assert produced[1]["id"] == "readme"
+    assert produced[2]["metadata"] == {"path": "notes.txt"}
 
-    html = tmp_path / "page.html"
-    html_body = "<html><body><h1>Hi</h1></body></html>"
-    html.write_text(html_body, encoding="utf-8")
-    ((_, whole_html),) = list(iter_source(html, as_documents=True))
-    assert whole_html["messages"][0]["content"] == html_body
+
+def test_as_documents_forced(tmp_path):
+    path = write_lines(
+        tmp_path / "docs.jsonl",
+        [
+            "a plain string",
+            {"content": "explicit content", "id": "d1", "content_type": "markdown"},
+        ],
+    )
+    plan = iter_target(path, as_documents=True)
+    assert plan.adapter is not None and plan.adapter.name == "documents"
+    docs = [ctf for _, _, ctf in plan.items]
+    assert docs[0] == {"content": "a plain string", "content_type": "text"}
+    assert docs[1] == {"content": "explicit content", "id": "d1", "content_type": "markdown"}
+
+
+def test_as_documents_object_without_content_errors(tmp_path):
+    # Pre-release, forced/documents mode used to fall back to keeping the raw line
+    # verbatim for anything it couldn't interpret; that silently mislabeled malformed
+    # lines, so an object with no "content" key now errors loudly instead.
+    path = write_lines(tmp_path / "docs.jsonl", [{"messages": [{"role": "user", "content": "hi"}]}])
+    with pytest.raises(UserError) as ei:
+        list(iter_target(path, as_documents=True).items)
+    assert "could not interpret this line as a document" in str(ei.value)
+
+
+def test_single_document_file_rejected(tmp_path):
+    md = tmp_path / "notes.md"
+    md.write_text("# hi", encoding="utf-8")
+    with pytest.raises(UserError) as ei:
+        iter_target(md)
+    msg = str(ei.value)
+    assert "not a supported target" in msg
+    assert "directory" in msg
+
+
+def test_from_adapter_rejected_for_directory(tmp_path):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "a.md").write_text("# Title", encoding="utf-8")
+    with pytest.raises(UserError) as ei:
+        iter_target(docs_dir, from_="ctf")
+    assert "--from cannot be combined with a directory target" in str(ei.value)
+
+
+def test_directory_import(tmp_path, conn):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "a.md").write_text("# Title\n\n- item\n", encoding="utf-8")
+    (docs_dir / "b.txt").write_text("plain text\n", encoding="utf-8")
+    (docs_dir / "weird#name.txt").write_text("weird\n", encoding="utf-8")
+    (docs_dir / ".hidden.md").write_text("hidden\n", encoding="utf-8")
+    (docs_dir / "c.json").write_text('{"messages": []}', encoding="utf-8")
+    (docs_dir / "d.unknownext").write_text("nope", encoding="utf-8")
+
+    summary = import_file(conn, docs_dir)
+    assert summary.inserted == 3
+    assert any("skipped 3 unsupported files" in n for n in summary.notes)
+
+    a = conn.traces.get("a.md")
+    assert a is not None
+    assert a["content"] == "# Title\n\n- item\n"
+    assert a["content_type"] == "markdown"
+    assert json.loads(a["metadata"])["path"] == str(docs_dir / "a.md")
+    assert conn.traces.get_turns("a.md") == []
+
+    b = conn.traces.get("b.txt")
+    assert b is not None and b["content_type"] == "text"
+
+    # '#' in a filename is sanitized (turn-id scheme is `{trace_id}#{idx}`)
+    weird = conn.traces.get("weird_name.txt")
+    assert weird is not None
+    assert weird["content"] == "weird\n"
+
+    # idempotent re-import
+    again = import_file(conn, docs_dir)
+    assert again.inserted == 0
+    assert again.skipped_duplicate == 3
+
+
+def test_directory_import_no_importable_files(tmp_path):
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    (empty_dir / "notes.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(UserError) as ei:
+        iter_target(empty_dir)
+    assert "no importable files found" in str(ei.value)
+
+
+def test_directory_import_non_utf8_file_fails_fast(tmp_path, conn):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "bad.txt").write_bytes(b"\xff\xfe bad bytes")
+    with pytest.raises(UserError) as ei:
+        import_file(conn, docs_dir)
+    assert "UTF-8" in str(ei.value)
+
+
+def test_directory_import_non_utf8_file_skip_invalid(tmp_path, conn):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "a-good.txt").write_text("hello", encoding="utf-8")
+    (docs_dir / "z-bad.txt").write_bytes(b"\xff\xfe bad bytes")
+
+    summary = import_file(conn, docs_dir, skip_invalid=True)
+    assert summary.inserted == 1
+    assert len(summary.invalid) == 1
+    assert "UTF-8" in summary.invalid[0]
+    assert conn.traces.get("a-good.txt") is not None
 
 
 # ── ADP-14 (requires P3) ─────────────────────────────────────────────────────
@@ -372,7 +488,7 @@ def test_import_file_pipeline(tmp_path, conn):
                     {"role": "assistant", "content": "yo"},
                 ],
             },
-            {"id": "t2", "messages": [{"role": "document", "content": "a doc"}]},
+            {"id": "t2", "content": "a doc", "content_type": "text"},
         ],
     )
     summary = import_file(conn, path)
@@ -383,6 +499,10 @@ def test_import_file_pipeline(tmp_path, conn):
     turns = conn.traces.get_turns("t1")
     assert [t["role"] for t in turns] == ["user", "assistant"]
     assert [t["id"] for t in turns] == ["t1#0", "t1#1"]
+
+    doc = conn.traces.get("t2")
+    assert doc is not None and doc["content"] == "a doc" and doc["content_type"] == "text"
+    assert conn.traces.get_turns("t2") == []
 
     # idempotent: importing again inserts nothing new
     again = import_file(conn, path)

@@ -27,10 +27,11 @@ TRACE_CONV = {
         {"role": "assistant", "content": "done"},
     ],
 }
-# Trace B: a single document.
+# Trace B: a single document (content on the trace row, zero turns).
 TRACE_DOC = {
     "id": "t_doc",
-    "messages": [{"role": "document", "content": "a document"}],
+    "content": "a document",
+    "content_type": "text",
 }
 
 FIELDS = [
@@ -59,7 +60,7 @@ def _cfg(tmp_path, *, level="turn", label_roles=None, annotator="alice"):
         name="task",
         level=level,
         fields=FIELDS,
-        label_roles=label_roles if label_roles is not None else ["assistant", "document"],
+        label_roles=label_roles if label_roles is not None else ["assistant"],
         shuffle=False,
         annotator=annotator,
         schema_hash=SCHEMA_HASH,
@@ -72,7 +73,7 @@ def _cfg(tmp_path, *, level="turn", label_roles=None, annotator="alice"):
 def build(tmp_path, *, level="turn", label_roles=None, annotator="alice", clock=None):
     conn = Database(default_db_path(tmp_path), clock=clock)
     conn.traces.import_trace(TRACE_CONV, "loose")
-    conn.traces.import_trace(TRACE_DOC, "loose")
+    conn.traces.import_document(TRACE_DOC, "loose")
     cfg = _cfg(tmp_path, level=level, label_roles=label_roles, annotator=annotator)
     conn.tasks.open(cfg, assume_yes=True)
     queue = conn.tasks.build_queue(cfg.name)
@@ -110,9 +111,10 @@ def test_queue_positions_and_counts(turn_client):
     by_id = {e["trace_id"]: e for e in entries}
     assert by_id["t_conv"]["position"] == 0
     assert by_id["t_doc"]["position"] == 1
-    # turn level: labelable turns are the two assistant turns + the document turn.
+    # turn level: labelable turns are the two assistant turns in t_conv; the
+    # document trace has zero turns, so it contributes no turn-level targets.
     assert by_id["t_conv"]["n_targets"] == 2
-    assert by_id["t_doc"]["n_targets"] == 1
+    assert by_id["t_doc"]["n_targets"] == 0
     assert by_id["t_conv"]["n_labeled"] == 0
     assert by_id["t_conv"]["n_skipped"] == 0
 
@@ -138,6 +140,14 @@ def test_trace_detail_shape(turn_client):
         "t_conv#3": True,  # assistant
     }
     assert body["turns"][1]["tool_calls"][0]["id"] == "c1"
+    assert body["document"] is None
+
+
+def test_document_trace_detail_shape(turn_client):
+    body = turn_client.get("/api/traces/t_doc").json()
+    assert body["trace"]["id"] == "t_doc"
+    assert body["turns"] == []
+    assert body["document"] == {"content": "a document", "content_type": "text"}
 
 
 # ── API-04 ───────────────────────────────────────────────────────────────────
@@ -422,7 +432,7 @@ def test_progress_reflects_commits(turn_client):
     )
     body = turn_client.get("/api/progress").json()
     assert body["unit"] == "turns"
-    assert body["total"] == 3  # 2 assistant turns + 1 document turn
+    assert body["total"] == 2  # 2 assistant turns in t_conv; the document trace has none
     assert body["labeled"] == 1
     assert body["skipped"] == 1
 
@@ -494,3 +504,40 @@ def test_extra_keys_rejected(turn_client):
         },
     )
     assert r.status_code == 422
+
+
+# ── API-22 (documents) ─────────────────────────────────────────────────────────
+
+
+def test_trace_level_queue_counts_document(tmp_path):
+    _conn, _cfg_, client = build(tmp_path, level="trace")
+    body = client.get("/api/queue").json()
+    by_id = {e["trace_id"]: e for e in body}
+    # trace level: every trace — conversation or document — is exactly one target.
+    assert by_id["t_conv"]["n_targets"] == 1
+    assert by_id["t_doc"]["n_targets"] == 1
+
+
+def test_trace_level_annotation_on_document(tmp_path):
+    conn, cfg, client = build(tmp_path, level="trace")
+    r = client.put(
+        "/api/annotations",
+        json={
+            "target_type": "trace",
+            "target_id": "t_doc",
+            "status": "labeled",
+            "values": {"verdict": "pass"},
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "labeled"
+    assert body["target_id"] == "t_doc"
+    row = conn.connection.execute(
+        "SELECT * FROM annotations WHERE task=? AND target_id=?", (cfg.name, "t_doc")
+    ).fetchone()
+    assert row is not None
+
+    detail = client.get("/api/traces/t_doc").json()
+    assert "t_doc" in detail["annotations"]
+    assert detail["annotations"]["t_doc"]["values"] == {"verdict": "pass"}

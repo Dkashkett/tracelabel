@@ -12,6 +12,7 @@ from tracelabel.errors import NotFoundError, UserError
 from .models import (
     AnnotationIn,
     AnnotationOut,
+    DocumentOut,
     Progress,
     QueueEntry,
     SessionInfo,
@@ -70,7 +71,10 @@ class LabelingService:
         trace = self._traces.get(trace_id)
         if trace is None:
             raise NotFoundError(f"unknown trace '{trace_id}'")
-        turns = [self._turn_out(row) for row in self._traces.get_turns(trace_id)]
+        document = self._document_out(trace)
+        turns = (
+            [] if document else [self._turn_out(row) for row in self._traces.get_turns(trace_id)]
+        )
         annotations = {
             str(row["target_id"]): self._annotation_out(row)
             for row in self._annotations.annotations_for_trace(
@@ -90,6 +94,7 @@ class LabelingService:
                 metadata=self._json_object(trace["metadata"]),
             ),
             turns=turns,
+            document=document,
             annotations=annotations,
             suggestions=suggestions,
         )
@@ -141,6 +146,13 @@ class LabelingService:
             raise UserError(
                 f"turn '{annotation.target_id}' has role '{turn['role']}', not labelable"
             )
+
+    @staticmethod
+    def _document_out(trace: sqlite3.Row) -> DocumentOut | None:
+        content = trace["content"]
+        if content is None:
+            return None
+        return DocumentOut(content=content, content_type=trace["content_type"] or "text")
 
     def _turn_out(self, row: sqlite3.Row) -> TurnOut:
         raw_tool_calls = row["tool_calls"]

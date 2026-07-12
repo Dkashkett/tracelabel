@@ -33,9 +33,10 @@ class AdapterRegistry:
         from .adk import AdkAdapter
         from .ctf import CtfAdapter
         from .datadog import DatadogAdapter
+        from .documents import DocumentsAdapter
         from .loose import LooseAdapter
 
-        return cls((CtfAdapter, AdkAdapter, DatadogAdapter, LooseAdapter))
+        return cls((CtfAdapter, AdkAdapter, DatadogAdapter, DocumentsAdapter, LooseAdapter))
 
     def detect(self, first_values: list[Any]) -> Adapter:
         for factory in self._factories:
@@ -46,8 +47,8 @@ class AdapterRegistry:
             "Could not detect the format of this file.\n"
             "Each line should be a CTF trace, for example:\n\n"
             f"  {GENERIC_CTF_SNIPPET}\n\n"
-            "Pass --from adk|datadog|loose to force an adapter, or --as-documents to import "
-            "freeform text. See docs/trace-format.md."
+            "Pass --from adk|datadog|loose|documents to force an adapter, or point at a "
+            "directory of files to import them as documents. See docs/trace-format.md."
         )
 
     def select(self, name: str, first_values: list[Any]) -> Adapter:

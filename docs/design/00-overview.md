@@ -64,15 +64,15 @@ Component stack (locked):
 
 | Term | Definition |
 |------|------------|
-| **Trace** | One unit of importable content: a multi-turn conversation *or* a freeform document. A document is represented as a single-turn trace. |
-| **Turn** | One message within a trace. Identified by `"{trace_id}#{index}"`. |
+| **Trace** | One unit of importable content: a multi-turn conversation *or* a freeform document. A document is a trace with `content`/`content_type` set and **zero turns** — labelable only at trace level. |
+| **Turn** | One message within a conversation trace. Identified by `"{trace_id}#{index}"`. Document traces have none. |
 | **Task** | A named labeling pass over a set of traces at exactly one **level** (`turn` or `trace`) with one resolved field schema. The same traces can carry many tasks (e.g. `empathy`, `escalation`). |
 | **Level** | `turn` or `trace`. A property of the task, never mixed within a task. |
 | **Field** | One input in the annotation form: `single_select`, `multi_select`, or `text`. |
 | **Resolved schema** | The fully-expanded field list after default injection and preset expansion. The only schema the app (renderer, writer, hasher) ever sees. |
 | **Annotation** | A human-committed set of field values for one target (turn or trace) in one task, by one annotator. Status `labeled` or `skipped`. |
 | **Suggestion** | A model-produced set of field values. Lives in its own table. **Never** an annotation until a human confirms. |
-| **Labelable turn** | A turn whose `role` is in the task's `label_roles` (default `[assistant, document]`). Only these are annotation targets in turn-level tasks. |
+| **Labelable turn** | A turn whose `role` is in the task's `label_roles` (default `[assistant]`). Only these are annotation targets in turn-level tasks. Documents have no turns, so they're only annotation targets in trace-level tasks. |
 | **Project** | A `.tracelabel/` directory holding the SQLite db and lock file, created next to the data/config file. |
 
 ## 5. Cross-cutting invariants (violations are bugs)

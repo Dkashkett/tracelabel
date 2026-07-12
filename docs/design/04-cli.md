@@ -8,7 +8,7 @@ Implemented with Typer. Entry point: `tracelabel` (also runnable as `uvx tracela
 ```
 tracelabel serve   [TARGET] [--task NAME] [--level turn|trace] [--annotator NAME]
                    [--shuffle/--no-shuffle] [--db PATH] [--port N] [--no-browser] [--yes]
-tracelabel import  TARGET [--from auto|ctf|adk|datadog] [--db PATH]
+tracelabel import  TARGET [--from auto|ctf|adk|datadog|documents] [--db PATH]
                    [--on-conflict fail|skip] [--skip-invalid] [--as-documents]
 tracelabel export  [--task NAME] [--db PATH] [--format jsonl|csv] [--joined]
                    [--out PATH] [--status labeled|skipped|all]
@@ -17,9 +17,15 @@ tracelabel suggest [TARGET] [--task NAME] [--db PATH] [--limit N] [--overwrite] 
 tracelabel demo    [--port N] [--no-browser]
 ```
 
-`TARGET` is a `.yaml`/`.yml` config **or** a data file (`.jsonl`/`.json`). If it's a data
-file, an implicit empty config is assumed (all defaults). The project directory (where
-`.tracelabel/` lives) is the directory containing TARGET.
+`TARGET` is a `.yaml`/`.yml` config, a data file (`.jsonl`/`.json`), **or a directory** of
+document files (`.md`/`.markdown`/`.txt`/`.text`/`.html`/`.htm` — the folder-of-docs quick
+start, 07 §4). If it's a data file or directory, an implicit empty config is assumed (all
+defaults). The project directory (where `.tracelabel/` lives) is TARGET itself for a
+directory, otherwise the directory containing TARGET.
+
+A bare single document file (e.g. `notes.md`) is **not** a supported target — it has no real
+use case as a one-trace project. It's rejected with a message pointing at a JSONL of documents
+or a directory of files.
 
 For `serve` and `suggest`, `TARGET` may be omitted: the CLI then looks for `./config.yaml`
 in the current directory and uses it if present, otherwise exits with the "No data file
@@ -63,12 +69,18 @@ Turn order within a trace is always `idx` — only trace order shuffles.
 
 ## 4. `import`
 
-Idempotent by design (02 §4); safe to re-run after appending lines to the JSONL.
-`--from auto` (default) runs format detection (07 §2). `--as-documents` wraps each line/file
-as a single-turn `document` trace (07 §4). Prints a summary:
+Idempotent by design (02 §4); safe to re-run after appending lines to the JSONL, or after
+re-serving a directory. `--from auto` (default) runs format detection (07 §2), which includes
+the `documents` adapter. `--as-documents` is an alias for `--from documents` on JSONL/JSON
+input — force every line to be interpreted as a document even if it would otherwise sniff as
+something else. A directory target always imports as documents, one per file (07 §4); `--from`
+may not be combined with a directory (each file's extension already determines its content
+type). Prints a summary, including any adapter notes (skipped files, interpreted keys):
 
 ```
 imported traces.jsonl: 412 inserted, 88 skipped (duplicate), 0 conflicts, 2 invalid lines skipped
+imported docs: 14 inserted, 0 skipped (duplicate), 0 conflicts, 0 invalid lines skipped
+  skipped 3 unsupported files
 ```
 
 ## 5. `export`
@@ -88,8 +100,10 @@ value.<field_name> ...            # one column per field in the task's resolved 
   to `json.loads` in pandas.
 - Skipped rows appear with empty values unless `--status labeled`.
 
-**`--joined`**: adds `role`, `content`, `content_type` (turn-level) or full serialized
-`messages` + trace `metadata` (trace-level), so a pandas user never joins back to the source.
+**`--joined`**: adds `role`, `content`, `content_type` (turn-level); at trace-level it adds
+`trace_metadata` plus either full serialized `messages` (conversation trace) or `content` +
+`content_type` (document trace) — whichever applies. Either way a pandas user never joins back
+to the source.
 
 ```python
 def export(conn, task, fmt, joined, out, status):

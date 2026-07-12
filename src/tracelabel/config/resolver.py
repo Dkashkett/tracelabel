@@ -54,7 +54,7 @@ class ConfigResolver:
             name=cli.task or raw.task or default_task_name(data),
             level=cli.level or raw.level,
             fields=[canonical_field_dict(field) for field in fields],
-            label_roles=raw.label_roles or ["assistant", "document"],
+            label_roles=raw.label_roles or ["assistant"],
             shuffle=cli.shuffle if cli.shuffle is not None else raw.shuffle,
             annotator=cli.annotator or raw.annotator or self._username_provider(),
             schema_hash=schema_hash(fields),

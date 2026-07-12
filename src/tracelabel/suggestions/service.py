@@ -168,6 +168,14 @@ class SuggestionService:
         else:
             trace_id = target_id
             target_index = None
+        trace = self._traces.get(trace_id)
+        if trace is not None and trace["content"] is not None:
+            return TargetContext(
+                turns=[],
+                target_id=target_id,
+                target_index=target_index,
+                document=str(trace["content"]),
+            )
         return TargetContext(
             turns=self._traces.get_turns(trace_id),
             target_id=target_id,

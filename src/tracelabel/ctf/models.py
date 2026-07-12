@@ -3,8 +3,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Json = dict[str, Any]
-Role = Literal["system", "user", "assistant", "tool", "document"]
+Role = Literal["system", "user", "assistant", "tool"]
 ContentType = Literal["text", "json", "html", "parts"]
+DocumentContentType = Literal["text", "json", "html", "markdown"]
 
 
 class ToolCallFunction(BaseModel):
@@ -62,4 +63,16 @@ class TraceIn(BaseModel):
     source: str | None = None
     metadata: Json = Field(default_factory=dict)
     messages: list[MessageIn] = Field(min_length=1)
+    raw: Json | None = None
+
+
+class DocumentIn(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    format_version: int = 1
+    id: str | None = None
+    source: str | None = None
+    metadata: Json = Field(default_factory=dict)
+    content: str
+    content_type: DocumentContentType | None = None
     raw: Json | None = None

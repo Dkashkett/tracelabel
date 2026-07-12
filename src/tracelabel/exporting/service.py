@@ -96,11 +96,15 @@ class ExportService:
                 content_type=turn["content_type"],
             )
             return row
-        turns = self._traces.get_turns(trace_id)
-        row["messages"] = [self._reconstruct_message(turn) for turn in turns]
         trace = self._traces.get(trace_id)
         if trace is None:
             raise UserError(f"annotation target '{trace_id}' no longer exists")
+        if trace["content"] is not None:
+            row["content"] = trace["content"]
+            row["content_type"] = trace["content_type"]
+        else:
+            turns = self._traces.get_turns(trace_id)
+            row["messages"] = [self._reconstruct_message(turn) for turn in turns]
         row["trace_metadata"] = self._json_object(trace["metadata"])
         return row
 

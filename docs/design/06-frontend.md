@@ -6,7 +6,9 @@ and flow state. The content is the loudest thing on screen; the UI is deliberate
 Stack: Vite + React 18 + TypeScript + Tailwind + shadcn/ui (vendored components, no runtime
 dep) + TanStack Query (server state) + TanStack Virtual (turn list). **No Redux** — client
 state is only "current position + form draft," held in a `useReducer` context.
-UI prefs (auto-advance, peek) persist in `localStorage`.
+UI prefs (auto-advance and theme) persist in `localStorage`. Dark is the default when the theme
+preference is missing or invalid; an explicitly stored `light` preference is preserved. A small
+head script applies that resolution before the app and stylesheet paint, preventing a light flash.
 
 ## 1. Layout
 
@@ -25,13 +27,14 @@ UI prefs (auto-advance, peek) persist in `localStorage`.
 │  └──────────────────────────┘     │  │ [s skip]  ●saved     ││
 │                                   │  └──────────────────────┘│
 ├───────────────────────────────────┴──────────────────────────┤
-│ TraceDrawer (collapsible): ●done ◐partial ○todo ⊘skipped     │
+│ TraceDrawer (collapsed initially): ●done ◐partial ○todo      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 Rules: **no modals, ever** (the `?` cheatsheet and drawer are overlays that never trap focus
 away from content). The thing being judged and the form judging it are always visible
 simultaneously. Trace-level tasks: same layout, no per-turn focus; the form targets the trace.
+The trace drawer starts collapsed on every load and remains directly toggleable from its footer.
 
 ## 2. Keyboard model (primary interface; mouse is fallback)
 
@@ -57,9 +60,10 @@ select of any kind. Digits map to its options by index (options order comes from
 
 **2.2 Commit & auto-advance:** commit validates required fields (inline errors if not),
 `PUT /api/annotations`, then advances to the **next unaddressed target** (skipping labeled +
-skipped ones), crossing trace boundaries automatically. Auto-advance is ON by default with a
-header toggle — some people hate it. `u` is the escape hatch auto-advance makes necessary:
-mistakes *will* be committed; last-write-wins editing is the undo.
+skipped ones), crossing trace boundaries and wrapping past the physical end when an earlier target
+is still unfinished. Auto-advance is ON by default with a header toggle — some people hate it.
+`u` is the escape hatch auto-advance makes necessary: mistakes *will* be committed;
+last-write-wins editing is the undo.
 
 **2.3 Save on commit, never submit-at-end.** Every commit writes immediately; the ●saved
 indicator flips on mutation settle. Closing the laptop mid-session costs nothing.
@@ -82,9 +86,9 @@ function focusTurn(idx: number, list: VirtualizerHandle) {
 
 ## 4. Content rendering
 
-One `TurnCard` per turn; role drives a colored left border (user=blue, assistant=green,
-tool=amber, system=gray, document=purple) so the eye navigates structure without reading.
-Color is otherwise reserved for meaning (roles, pass/fail states); the chrome is near-monochrome.
+One `TurnCard` per top-level display row; role drives a colored left border (user=blue,
+assistant=green, tool=amber, system=gray) so the eye navigates structure without reading. Color is
+otherwise reserved for meaning (roles, pass/fail states); the chrome is near-monochrome.
 
 | `content_type` | Renderer |
 |---|---|
@@ -92,11 +96,35 @@ Color is otherwise reserved for meaning (roles, pass/fail states); the chrome is
 | `json` | collapsible tree viewer, **collapsed beyond depth 2 by default** (tool payloads get huge); "view raw" toggle shows the verbatim string |
 | `html` | sandboxed iframe: `<iframe sandbox srcdoc={content}>` — **empty `sandbox` attr: no scripts, no same-origin, no forms, no popups.** Traces are untrusted input; this is a hard security requirement. Toggle to view source. |
 | `parts` | parts rendered in sequence, each by its own type's renderer |
+| `markdown` (documents only) | `react-markdown` + `remark-gfm`, styled with `@tailwindcss/typography` (`prose prose-sm dark:prose-invert`) — no `dangerouslySetInnerHTML` anywhere |
 
-`tool_calls` render as a compact card on the assistant turn: function name + collapsible
-raw `arguments` string. Long turns clamp to `max-height: 40vh` with expand-on-click — a
-400-line tool output must not push the next turn off screen. The turn list is virtualized
-(TanStack Virtual) — a 300-turn trace must not choke the DOM.
+Tool presentation follows `session.level`, without mutating API data:
+
+- **Trace level:** the presentation layer pairs assistant `tool_calls` with later tool turns by
+  exact `tool_call_id`. All calls from one assistant message render in a single collapsed,
+  low-chrome **Tool activity** disclosure on that message. Its summary reports call names, results
+  received, and calls without results without interpreting payload success. Opening it reveals
+  each raw argument string and matched result in call order. Matched results leave the top-level
+  display only; unmatched results remain standalone. Empty call-only assistant messages omit the
+  blank content body, and later assistant responses remain separate chronological rows.
+- **Turn level:** the virtual list uses the raw `turns` array, preserving every protocol message
+  as a top-level row in API order. Calls remain summarized inline on their originating assistant
+  turn, but tool results are never absorbed. The active tool-calling assistant automatically
+  exposes its arguments; moving away restores the compact summary. Labelable tool-result rows
+  retain their own click target, keyboard focus, active ring, and annotation target.
+
+Disclosure changes explicitly remeasure the containing virtual row to avoid overlap or clipping.
+
+Long standalone turn content clamps to `max-height: 40vh` with expand-on-click — a 400-line
+payload must not push the next turn off screen by default. The turn list is virtualized (TanStack
+Virtual) — a 300-turn trace must not choke the DOM.
+
+### Documents
+
+When `TraceDetail.document` is set (05 §2), `TracePane` renders a `DocumentPane` — a single
+scroll container running the content through the same `ContentByType` dispatch as turns, plus
+`markdown` — instead of the virtualized turn list. There's no per-turn focus for a document:
+trace-level tasks target the whole document, same as any other trace-level task.
 
 ## 5. Suggestion prefill (see 08)
 
@@ -125,6 +153,7 @@ interface NavState {
   draft: Record<string, string | string[]>;   // form values before commit
   prefillModel: string | null;
   autoAdvance: boolean; peek: boolean;
+  workflow: "labeling" | "finished" | "review";
 }
 ```
 
@@ -146,8 +175,17 @@ function FieldRenderer({ f, value, onChange }: Props) {
 ## 7. Progress & drawer
 
 Thin progress bar in the header (`labeled+skipped / total`, native units) — ambient, always
-visible. TraceDrawer lists queue entries with ●/◐/○/⊘ states; click to jump. Skip is explicit
-(`s`, recorded status) so "did I miss this or decline it?" is always answerable.
+visible. TraceDrawer starts collapsed and lists queue entries with ●/◐/○/⊘ states when opened;
+click to jump. Skip is explicit (`s`, recorded status) so "did I miss this or decline it?" is
+always answerable.
+
+Completion is derived only from persisted queue counts: every target must be labeled or skipped.
+That includes a dataset already complete when opened. After the last successful commit or skip,
+the two working panes are replaced by a finished screen while the header, progress, and collapsed
+trace footer remain visible. The screen reports labeled, skipped, and total counts and has one
+primary **Review traces** action, which opens the footer. Selecting any trace enters `review` mode,
+restores the editable workspace, and suppresses the finished screen while reviewing. There is no
+final submission button or backend workflow state; every annotation continues to save immediately.
 
 ## 8. Anti-goals
 

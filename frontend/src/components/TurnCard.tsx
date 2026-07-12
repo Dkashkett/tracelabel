@@ -1,31 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/api/types";
-import { ToolCallCard } from "./ToolCallCard";
-import { HtmlFrame } from "./renderers/HtmlFrame";
-import { JsonTree } from "./renderers/JsonTree";
-import { PartsContent } from "./renderers/PartsContent";
-import { TextContent } from "./renderers/TextContent";
+import type { ToolInteraction } from "@/presentation/turnGroups";
+import { ToolActivity } from "./ToolActivity";
+import { ContentByType } from "./renderers/ContentByType";
 
 const roleBorder: Record<Turn["role"], string> = {
   user: "border-l-blue-500",
   assistant: "border-l-green-500",
   tool: "border-l-amber-500",
   system: "border-l-slate-400",
-  document: "border-l-purple-500",
 };
 
 function Content({ turn }: { turn: Turn }) {
-  switch (turn.content_type) {
-    case "text":
-      return <TextContent content={turn.content} />;
-    case "json":
-      return <JsonTree content={turn.content} />;
-    case "html":
-      return <HtmlFrame content={turn.content} />;
-    case "parts":
-      return <PartsContent content={turn.content} />;
-  }
+  return <ContentByType content={turn.content} contentType={turn.content_type} />;
 }
 
 export function TurnCard({
@@ -33,15 +21,22 @@ export function TurnCard({
   active,
   dimmed,
   onSelect,
+  toolInteractions = [],
+  showToolResults = true,
+  onSizeChange,
 }: {
   turn: Turn;
   active: boolean;
   dimmed: boolean;
   onSelect: () => void;
+  toolInteractions?: ToolInteraction[];
+  showToolResults?: boolean;
+  onSizeChange?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const hasContent = turn.content.length > 0;
 
   // A 400-line tool output must not push the next turn off screen (06 §4): clamp to 40vh.
   useLayoutEffect(() => {
@@ -51,9 +46,18 @@ export function TurnCard({
 
   return (
     <div
+      data-turn-id={turn.id}
+      data-turn-idx={turn.idx}
+      data-turn-role={turn.role}
+      data-active={active ? "true" : "false"}
+      data-labelable={turn.labelable ? "true" : "false"}
+      tabIndex={turn.labelable ? 0 : undefined}
+      onFocus={(event) => {
+        if (turn.labelable && event.target === event.currentTarget) onSelect();
+      }}
       onClick={onSelect}
       className={cn(
-        "border-l-4 bg-white px-4 py-3 transition-opacity dark:bg-slate-900",
+        "border-l-4 bg-white px-4 py-3 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500 dark:bg-slate-900",
         roleBorder[turn.role],
         active && "ring-2 ring-sky-500",
         dimmed && "opacity-40",
@@ -68,14 +72,25 @@ export function TurnCard({
         )}
       </div>
 
-      <div
-        ref={bodyRef}
-        className="overflow-hidden"
-        style={{ maxHeight: expanded ? "none" : "40vh" }}
-      >
-        <Content turn={turn} />
-        {turn.tool_calls?.map((call, i) => <ToolCallCard key={call.id ?? i} call={call} />)}
-      </div>
+      {hasContent && (
+        <div
+          ref={bodyRef}
+          data-turn-content="true"
+          className="overflow-hidden"
+          style={{ maxHeight: expanded ? "none" : "40vh" }}
+        >
+          <Content turn={turn} />
+        </div>
+      )}
+
+      {toolInteractions.length > 0 && (
+        <ToolActivity
+          interactions={toolInteractions}
+          showResults={showToolResults}
+          autoExpand={!showToolResults && active}
+          onExpandedChange={onSizeChange}
+        />
+      )}
 
       {clamped && !expanded && (
         <button
@@ -83,6 +98,7 @@ export function TurnCard({
           onClick={(e) => {
             e.stopPropagation();
             setExpanded(true);
+            onSizeChange?.();
           }}
           className="mt-1 text-xs font-medium text-sky-600 hover:underline"
         >
@@ -95,6 +111,7 @@ export function TurnCard({
           onClick={(e) => {
             e.stopPropagation();
             setExpanded(false);
+            onSizeChange?.();
           }}
           className="mt-1 text-xs font-medium text-sky-600 hover:underline"
         >

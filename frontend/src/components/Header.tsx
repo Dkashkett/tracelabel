@@ -3,11 +3,11 @@ import { useController } from "@/state/NavContext";
 import { getTheme, setTheme, type Theme } from "@/state/prefs";
 
 export function Header() {
-  const { session, progress, state, toggleAutoAdvance, setCheatOpen } = useController();
+  const { session, completionCounts, state, toggleAutoAdvance, setCheatOpen } = useController();
   const [theme, setThemeState] = useState<Theme>(getTheme);
 
-  const total = progress?.total ?? 0;
-  const done = (progress?.labeled ?? 0) + (progress?.skipped ?? 0);
+  const { total, labeled, skipped } = completionCounts;
+  const done = labeled + skipped;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   function flipTheme() {

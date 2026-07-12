@@ -30,6 +30,11 @@ class TraceInfo(BaseModel):
     metadata: dict[str, Any]
 
 
+class DocumentOut(BaseModel):
+    content: str
+    content_type: Literal["text", "json", "html", "markdown"]
+
+
 class TurnOut(BaseModel):
     id: str
     idx: int
@@ -75,6 +80,7 @@ class SuggestionOut(BaseModel):
 class TraceDetail(BaseModel):
     trace: TraceInfo
     turns: list[TurnOut]
+    document: DocumentOut | None = None
     annotations: dict[str, AnnotationOut]
     suggestions: dict[str, SuggestionOut]
 

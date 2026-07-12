@@ -63,6 +63,10 @@ function handleKeyDown(e: KeyboardEvent, ctl: Controller) {
     return;
   }
 
+  // Completion has no hidden form actions. Selecting a trace from the drawer enters review mode
+  // and restores the normal keyboard model.
+  if (ctl.isFinished) return;
+
   // FIELD typing: only Cmd/Ctrl+Enter is intercepted (commit); everything else types (06 §2).
   if (inText) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

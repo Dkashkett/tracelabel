@@ -7,12 +7,12 @@ yielding a trace-or-turn task with the pass/fail + reasoning default. YAML exist
 
 ```yaml
 # config.yaml — every key optional
-data: traces.jsonl            # path to CTF JSONL, relative to this file
+data: traces.jsonl            # path to CTF JSONL (or a directory of document files), relative to this file
 task: empathy                 # task name; default derived (see §4)
 level: turn                   # "turn" | "trace"; default "trace"
 shuffle: true                 # default false; seeded per task, stable across resume
 annotator: alice              # default: OS username
-label_roles: [assistant]      # turn-level only; default [assistant, document]
+label_roles: [assistant]      # turn-level only; default [assistant]
 
 fields:                       # omit entirely → pass/fail default (§3)
   - preset: pass_fail         # expands to verdict + reasoning (§5)
@@ -131,7 +131,7 @@ def resolve(raw: RawConfig, cli: CliArgs) -> ResolvedTaskConfig:
     level = cli.level or raw.level
     fields = expand(raw.fields) if raw.fields is not None else DEFAULT_FIELDS
     check_unique_names(fields)                                     # duplicate names = hard error
-    roles = raw.label_roles or ["assistant", "document"]
+    roles = raw.label_roles or ["assistant"]
     return ResolvedTaskConfig(
         name=name, level=level,
         fields=[canonical_field_dict(f) for f in fields],          # §6

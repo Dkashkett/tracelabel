@@ -162,18 +162,35 @@ def test_resolution_defaults(monkeypatch):
     cfg = resolve(raw, CliArgs())
     assert cfg.name == default_task_name(Path("mytraces.jsonl"))
     assert cfg.name.startswith("mytraces-")
-    assert cfg.label_roles == ["assistant", "document"]
+    assert cfg.label_roles == ["assistant"]
     assert cfg.annotator == "alice"
 
 
-def test_raw_config_for_target_bad_suffix(tmp_path):
-    with pytest.raises(UserError):
+def test_raw_config_for_target_single_document_suffix_rejected(tmp_path):
+    # a single document-extension file has no real use case; point at JSONL/directory instead.
+    with pytest.raises(UserError) as ei:
         raw_config_for_target(tmp_path / "x.txt")
+    msg = str(ei.value)
+    assert "not a supported target" in msg
+    assert "directory" in msg
+
+
+def test_raw_config_for_target_unsupported_suffix(tmp_path):
+    with pytest.raises(UserError) as ei:
+        raw_config_for_target(tmp_path / "x.csv")
+    assert "unsupported target type" in str(ei.value)
 
 
 def test_raw_config_for_target_jsonl(tmp_path):
     raw = raw_config_for_target(tmp_path / "x.jsonl")
     assert raw.data == (tmp_path / "x.jsonl").resolve()
+
+
+def test_raw_config_for_target_directory(tmp_path):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    raw = raw_config_for_target(docs_dir)
+    assert raw.data == docs_dir.resolve()
 
 
 # CFG-13 — mirrors API-07…API-13 at the function level

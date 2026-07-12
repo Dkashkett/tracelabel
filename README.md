@@ -27,6 +27,21 @@ tracelabel export                     # → <task>-annotations.jsonl
 Your traces are a UTF-8 [JSONL](docs/trace-format.md) file, one trace per line. No config needed
 — tracelabel defaults to a turn-level pass/fail task. Point it at a file and start labeling.
 
+Labeling freeform documents (notes, transcripts, policy pages) instead of agent traces works
+the same way — either a folder of files, or a JSONL of documents:
+
+```bash
+tracelabel serve ./docs                # every .md/.txt/.html/.htm file in the folder, one trace each
+```
+
+```jsonl
+"A plain document is just a string."
+{"content": "# Report\n\nFindings go here.", "content_type": "markdown", "id": "report-1"}
+```
+
+Documents label at the trace level (there's nothing to break into turns) and Markdown renders
+with real formatting in the UI.
+
 ## Your traces never leave your machine
 
 The server binds `127.0.0.1` only — there is no `--host` flag and no auth, because nothing is
@@ -83,8 +98,8 @@ tracelabel is deliberately small. Reach for a full platform when you need what i
 
 - **[Label Studio](https://labelstud.io/) / [Argilla](https://argilla.io/)** — hosted
   multi-annotator platforms with accounts, projects, review workflows, and rich media (images,
-  audio, bounding boxes). tracelabel is single-player, text/JSON/HTML only, and runs on your
-  laptop.
+  audio, bounding boxes). tracelabel is single-player, text/JSON/HTML/Markdown only, and runs
+  on your laptop.
 - Use tracelabel when you want to label agent traces *right now*, keyboard-fast, without standing
   up infrastructure or sending your data anywhere.
 
