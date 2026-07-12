@@ -59,7 +59,7 @@ def seeded(conn, tmp_path):
     """2 traces, a turn-level task with a multi-select field, 3 annotations
     (one skipped, one with prefill_model), and one suggestion that must not
     appear in export output."""
-    conn.traces.import_trace(ctf_trace(id="t1"), "jsonl")
+    conn.traces.import_trace({**ctf_trace(id="t1"), "metadata": {"batch": "week-28"}}, "jsonl")
     conn.traces.import_trace(
         ctf_trace(
             id="t2",
@@ -187,6 +187,21 @@ def test_joined_turn_level(seeded, tmp_path):
     assert row["role"] == "assistant"
     assert row["content"] == "hello"
     assert row["content_type"] == "text"
+    assert row["trace_metadata"] == {"batch": "week-28"}
+    assert row["source"] == "jsonl"
+
+
+def test_joined_turn_level_csv_columns(seeded, tmp_path):
+    out = tmp_path / "out.csv"
+    export_annotations(seeded, "task", "csv", joined=True, out=out)
+    with out.open(newline="") as f:
+        reader = csv.DictReader(f)
+        header = reader.fieldnames
+        rows = list(reader)
+    assert header[-5:] == ["role", "content", "content_type", "trace_metadata", "source"]
+    row = next(r for r in rows if r["target_id"] == "t1#1")
+    assert json.loads(row["trace_metadata"]) == {"batch": "week-28"}
+    assert row["source"] == "jsonl"
 
 
 def test_joined_trace_level(conn, tmp_path):

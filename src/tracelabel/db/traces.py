@@ -39,7 +39,7 @@ class TraceRepository:
         trace: Json,
         source: str,
         on_conflict: ConflictPolicy = "fail",
-    ) -> ImportResult:
+    ) -> tuple[ImportResult, str]:
         messages = cast(list[Json], trace["messages"])
         trace_id = str(trace.get("id") or derive_trace_id(messages))
         incoming_hash = content_hash(messages)
@@ -48,7 +48,7 @@ class TraceRepository:
             (trace_id,),
         ).fetchone()
         if existing is not None:
-            return self._handle_existing(trace_id, incoming_hash, existing, on_conflict)
+            return self._handle_existing(trace_id, incoming_hash, existing, on_conflict), trace_id
 
         with self._transaction() as connection:
             connection.execute(
@@ -81,14 +81,14 @@ class TraceRepository:
                         _json_or_none(message.get("raw")),
                     ),
                 )
-        return "inserted"
+        return "inserted", trace_id
 
     def import_document(
         self,
         document: Json,
         source: str,
         on_conflict: ConflictPolicy = "fail",
-    ) -> ImportResult:
+    ) -> tuple[ImportResult, str]:
         content = cast(str, document["content"])
         content_type = document.get("content_type")
         doc_id = str(document.get("id") or derive_document_id(content))
@@ -98,7 +98,7 @@ class TraceRepository:
             (doc_id,),
         ).fetchone()
         if existing is not None:
-            return self._handle_existing(doc_id, incoming_hash, existing, on_conflict)
+            return self._handle_existing(doc_id, incoming_hash, existing, on_conflict), doc_id
 
         with self._transaction() as connection:
             connection.execute(
@@ -116,7 +116,7 @@ class TraceRepository:
                     content_type,
                 ),
             )
-        return "inserted"
+        return "inserted", doc_id
 
     def _handle_existing(
         self,

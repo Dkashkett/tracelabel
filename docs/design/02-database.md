@@ -259,3 +259,10 @@ WHERE task=:task AND target_type='turn' AND annotator=:annotator;
 ```
 
 Progress is always reported in the task's native unit ("137/482 turns", "34/200 traces").
+
+**Scoped by default (04 §2, 10 §3):** the queries above describe the whole-pool count. In
+practice `GET /api/progress` (05) restricts both the numerator and denominator to trace ids in
+the current `serve` session's queue — the traces contained in the file just served, not every
+trace ever imported into the db. `serve --all` (04 §2) is the only path that reports against
+the true whole-db count shown here. `export` and `tasks list` are unaffected — both stay
+db-wide.

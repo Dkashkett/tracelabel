@@ -164,23 +164,32 @@ class AnnotationRepository:
             for row in rows
         }
 
-    def unaddressed_targets(self, config: ResolvedTaskConfig) -> list[str]:
+    def unaddressed_targets(
+        self, config: ResolvedTaskConfig, trace_ids: list[str] | None = None
+    ) -> list[str]:
+        scope_clause = ""
+        scope_params: list[Any] = []
+        if trace_ids is not None:
+            scope_clause = " AND {column} IN (SELECT value FROM json_each(?))"
+            scope_params = [canonical_json(trace_ids)]
         if config.level == "turn":
             rows = self._connection.execute(
                 "SELECT t.id FROM turns t "
                 "WHERE t.role IN (SELECT value FROM json_each(?)) "
                 "AND NOT EXISTS (SELECT 1 FROM annotations a WHERE a.task=? "
                 "  AND a.annotator=? AND a.target_type='turn' AND a.target_id=t.id) "
-                "ORDER BY t.trace_id, t.idx",
-                (canonical_json(config.label_roles), config.name, config.annotator),
+                + scope_clause.format(column="t.trace_id")
+                + " ORDER BY t.trace_id, t.idx",
+                (canonical_json(config.label_roles), config.name, config.annotator, *scope_params),
             ).fetchall()
         else:
             rows = self._connection.execute(
                 "SELECT tr.id FROM traces tr "
                 "WHERE NOT EXISTS (SELECT 1 FROM annotations a WHERE a.task=? "
                 "  AND a.annotator=? AND a.target_type='trace' AND a.target_id=tr.id) "
-                "ORDER BY tr.imported_at, tr.id",
-                (config.name, config.annotator),
+                + scope_clause.format(column="tr.id")
+                + " ORDER BY tr.imported_at, tr.id",
+                (config.name, config.annotator, *scope_params),
             ).fetchall()
         return [str(row[0]) for row in rows]
 

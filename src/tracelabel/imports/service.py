@@ -18,6 +18,7 @@ class ImportSummary:
     skipped_conflict: int = 0
     invalid: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    trace_ids: list[str] = field(default_factory=list)
 
 
 class ImportService:
@@ -44,6 +45,7 @@ class ImportService:
         plan = iter_target(path, self._registry, from_=from_, as_documents=as_documents)
 
         seen_ids: dict[str, int] = {}
+        seen_trace_ids: set[str] = set()
         warned: set[str] = set()
         items = iter(plan.items)
         while True:
@@ -67,10 +69,15 @@ class ImportService:
                 self._validator.validate_line(folded, file, line_number)
                 self._check_duplicate_id(folded.get("id"), seen_ids, file, line_number)
                 if "content" in folded and "messages" not in folded:
-                    result = self._traces.import_document(folded, plan.source, on_conflict)
+                    result, trace_id = self._traces.import_document(
+                        folded, plan.source, on_conflict
+                    )
                 else:
-                    result = self._traces.import_trace(folded, plan.source, on_conflict)
+                    result, trace_id = self._traces.import_trace(folded, plan.source, on_conflict)
                 self._tally(summary, result)
+                if trace_id not in seen_trace_ids:
+                    seen_trace_ids.add(trace_id)
+                    summary.trace_ids.append(trace_id)
             except CtfError as error:
                 if skip_invalid:
                     summary.invalid.append(str(error))

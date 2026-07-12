@@ -113,11 +113,16 @@ class TaskRepository:
             ).fetchone(),
         )
 
-    def build_queue(self, task_name: str) -> list[str]:
-        trace_ids = [
-            str(row[0])
-            for row in self._connection.execute("SELECT id FROM traces ORDER BY imported_at, id")
-        ]
+    def build_queue(self, task_name: str, trace_ids: list[str] | None = None) -> list[str]:
+        if trace_ids is None:
+            trace_ids = [
+                str(row[0])
+                for row in self._connection.execute(
+                    "SELECT id FROM traces ORDER BY imported_at, id"
+                )
+            ]
+        else:
+            trace_ids = list(trace_ids)
         row = self._connection.execute(
             "SELECT shuffle_seed FROM tasks WHERE name=?",
             (task_name,),

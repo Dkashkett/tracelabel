@@ -17,6 +17,12 @@ def print_import_summary(path: Path, summary: ImportSummary) -> None:
         typer.echo(f"  {note}")
 
 
+def session_scope_note(data_path: Path, count: int, serve_all: bool) -> str:
+    if serve_all:
+        return f"{count} traces (whole db)"
+    return f"{count} traces from {data_path.name}"
+
+
 def print_tasks_table(tasks: list[dict[str, Any]]) -> None:
     header = ["TASK", "LEVEL", "PROGRESS", "SCHEMA", "UPDATED"]
     rows: list[list[str]] = []

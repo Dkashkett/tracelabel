@@ -140,7 +140,7 @@ def test_newer_db_refused(tmp_path):
 
 def test_import_twice_skipped_duplicate(conn):
     t = ctf_trace(id="x")
-    assert conn.traces.import_trace(t, "jsonl") == "inserted"
+    assert conn.traces.import_trace(t, "jsonl") == ("inserted", "x")
 
     def snapshot():
         traces = conn.connection.execute("SELECT * FROM traces ORDER BY id").fetchall()
@@ -148,7 +148,7 @@ def test_import_twice_skipped_duplicate(conn):
         return [tuple(r) for r in traces], [tuple(r) for r in turns]
 
     before = snapshot()
-    assert conn.traces.import_trace(t, "jsonl") == "skipped_duplicate"
+    assert conn.traces.import_trace(t, "jsonl") == ("skipped_duplicate", "x")
     after = snapshot()
     # twice ≡ once: table state is byte-identical.
     assert before == after
@@ -179,7 +179,10 @@ def test_import_conflict_skip(conn):
     ).fetchone()[0]
     other = ctf_trace(id="x", messages=[{"role": "user", "content": "DIFFERENT"}])
     with pytest.warns(UserWarning, match="keeping stored version"):
-        assert conn.traces.import_trace(other, "jsonl", on_conflict="skip") == "skipped_conflict"
+        assert conn.traces.import_trace(other, "jsonl", on_conflict="skip") == (
+            "skipped_conflict",
+            "x",
+        )
     # stored version untouched
     assert (
         conn.connection.execute("SELECT content_hash FROM traces WHERE id='x'").fetchone()[0]
@@ -195,7 +198,7 @@ def test_import_document_writes_content_zero_turns(conn):
     result = conn.traces.import_document(
         ctf_document(id="d1", content="# Title", content_type="markdown"), "documents"
     )
-    assert result == "inserted"
+    assert result == ("inserted", "d1")
     trace = conn.traces.get("d1")
     assert trace["content"] == "# Title"
     assert trace["content_type"] == "markdown"
@@ -204,8 +207,8 @@ def test_import_document_writes_content_zero_turns(conn):
 
 def test_import_document_derives_id_from_content_when_absent(conn):
     result = conn.traces.import_document(ctf_document(content="hello world"), "documents")
-    assert result == "inserted"
     expected_id = derive_document_id("hello world")
+    assert result == ("inserted", expected_id)
     trace = conn.traces.get(expected_id)
     assert trace is not None
     assert trace["content"] == "hello world"
@@ -214,8 +217,8 @@ def test_import_document_derives_id_from_content_when_absent(conn):
 
 def test_import_document_twice_skipped_duplicate(conn):
     doc = ctf_document(id="d1", content="body", content_type="text")
-    assert conn.traces.import_document(doc, "documents") == "inserted"
-    assert conn.traces.import_document(doc, "documents") == "skipped_duplicate"
+    assert conn.traces.import_document(doc, "documents") == ("inserted", "d1")
+    assert conn.traces.import_document(doc, "documents") == ("skipped_duplicate", "d1")
     assert conn.connection.execute("SELECT count(*) FROM traces").fetchone()[0] == 1
 
 
@@ -234,7 +237,7 @@ def test_import_document_edited_content_conflict_skip(conn):
     edited = ctf_document(id="d1", content="edited")
     with pytest.warns(UserWarning, match="keeping stored version"):
         result = conn.traces.import_document(edited, "documents", on_conflict="skip")
-    assert result == "skipped_conflict"
+    assert result == ("skipped_conflict", "d1")
     assert conn.traces.get("d1")["content"] == "original"
 
 
@@ -422,6 +425,41 @@ def test_build_queue_stable_across_reopen(tmp_path):
     assert q1 != [f"t{i:02d}" for i in range(20)]  # actually shuffled
 
 
+def test_build_queue_scoped_to_trace_ids_in_given_order(conn, tmp_path):
+    for i in range(5):
+        conn.traces.import_trace(ctf_trace(id=f"t{i:02d}"), "jsonl")
+    conn.tasks.open(make_cfg(tmp_path, name="t", shuffle=False), assume_yes=True)
+
+    # scoped + unshuffled: exact subset, in the order given (not imported_at/id order)
+    scoped = conn.tasks.build_queue("t", ["t03", "t00", "t04"])
+    assert scoped == ["t03", "t00", "t04"]
+
+    # None still falls back to the whole db, db-wide order
+    whole = conn.tasks.build_queue("t", None)
+    assert whole == [f"t{i:02d}" for i in range(5)]
+    assert conn.tasks.build_queue("t") == whole
+
+
+def test_build_queue_shuffle_applies_on_top_of_scoped_list(tmp_path):
+    path = default_db_path(tmp_path)
+    conn = Database(path)
+    for i in range(20):
+        conn.traces.import_trace(ctf_trace(id=f"t{i:02d}"), "jsonl")
+    conn.tasks.open(make_cfg(tmp_path, name="t", shuffle=True), assume_yes=True)
+    scoped_ids = [f"t{i:02d}" for i in range(10)]  # only half the pool is "in the file"
+
+    q1 = conn.tasks.build_queue("t", scoped_ids)
+    conn.close()
+
+    conn2 = Database(path)
+    q2 = conn2.tasks.build_queue("t", scoped_ids)
+    conn2.close()
+
+    assert sorted(q1) == scoped_ids  # scoping still excludes the other half
+    assert q1 == q2  # deterministic across reopen (stored seed)
+    assert q1 != scoped_ids  # actually shuffled
+
+
 # ── DB-14 ───────────────────────────────────────────────────────────────────
 
 
@@ -555,3 +593,25 @@ def test_unaddressed_and_without_suggestion(conn, tmp_path):
         raw_response=None,
     )
     assert conn.annotations.targets_without_suggestion("t", ["ta#1", "tb#1"]) == ["tb#1"]
+
+
+def test_unaddressed_targets_scoped_to_trace_ids(conn, tmp_path):
+    for tid in ("ta", "tb"):
+        conn.traces.import_trace(
+            ctf_trace(
+                id=tid,
+                messages=[
+                    {"role": "user", "content": "q"},
+                    {"role": "assistant", "content": "a"},
+                ],
+            ),
+            "jsonl",
+        )
+    cfg = make_cfg(tmp_path, name="t", level="turn", label_roles=["assistant"])
+    conn.tasks.open(cfg, assume_yes=True)
+    assert conn.annotations.unaddressed_targets(cfg, ["tb"]) == ["tb#1"]
+    assert conn.annotations.unaddressed_targets(cfg, []) == []
+
+    trace_cfg = make_cfg(tmp_path, name="ttrace", level="trace")
+    conn.tasks.open(trace_cfg, assume_yes=True)
+    assert conn.annotations.unaddressed_targets(trace_cfg, ["ta"]) == ["ta"]

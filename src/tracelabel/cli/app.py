@@ -55,6 +55,7 @@ def serve(
     port: Annotated[int, typer.Option("--port")] = 8377,
     no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
     yes: Annotated[bool, typer.Option("--yes")] = False,
+    all_: Annotated[bool, typer.Option("--all")] = False,
 ) -> None:
     path = target_path(target)
     cli = CliArgs(
@@ -67,7 +68,7 @@ def serve(
     )
     config = ConfigResolver().resolve(raw_config_for_target(path), cli)
     project_dir = path if path.is_dir() else path.parent
-    ServeCommand().execute(config, project_dir, db, port, no_browser, yes)
+    ServeCommand().execute(config, project_dir, db, port, no_browser, yes, serve_all=all_)
 
 
 @app.command(name="import")

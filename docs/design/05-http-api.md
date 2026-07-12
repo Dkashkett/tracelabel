@@ -99,6 +99,14 @@ interface Progress {
 }
 ```
 
+`total`/`labeled`/`skipped` are scoped to the traces in *this session's queue* (the file just
+served, per 04 §2/10 §3) — not the whole db pool. Two sessions serving different files against
+the same task report different progress even though annotations accumulate in one shared table;
+`serve --all` reports against the whole db instead. `GET /api/queue` was already scoped this way
+(it iterates the server's in-memory queue); `/api/progress` matches it for consistency. Only
+`/api/traces/{id}` and `PUT /api/annotations` stay unscoped — any known trace id remains a valid
+target regardless of the current queue.
+
 ## 3. Write-path validation (server is the enforcer)
 
 `PUT /api/annotations` validates against the task's resolved schema before writing

@@ -27,6 +27,10 @@ Your traces are a UTF-8 [JSONL](https://github.com/Dkashkett/tracelabel/blob/mai
 file, one trace per line. No config needed
 — tracelabel defaults to a turn-level pass/fail task. Point it at a file and start labeling.
 
+The file you serve is the queue: `tracelabel serve week-28.jsonl` labels *only* week 28's
+traces, even if your db already holds traces from other files. See
+[One db, many files](#one-db-many-files) below.
+
 Labeling freeform documents (notes, transcripts, policy pages) instead of agent traces works
 the same way — either a folder of files, or a JSONL of documents:
 
@@ -77,6 +81,24 @@ fields:
 
 Field types map one-to-one to UI controls and to export columns. Add a field, get a new keyboard
 target and a new column — no redesign.
+
+## One db, many files
+
+tracelabel stores one shared pool of traces per project (`.tracelabel/tracelabel.db`) — traces
+are deduped by id/content hash and accumulate across every file you've ever served or imported.
+But the *file you serve is a lens over that pool*, not the pool itself: `tracelabel serve
+week-28.jsonl --task empathy` scopes the labeling queue and progress bar to exactly the traces
+in `week-28.jsonl`, even if the db already contains traces from `week-27.jsonl` or other tasks.
+Re-serving an old file resumes exactly where you left off — nothing is re-scrambled or
+un-completed by importing something new.
+
+- Each file is imported idempotently, so re-serving the same file (or one with overlapping
+  traces) is always safe.
+- `tracelabel export` and `tracelabel tasks list` are **db-wide** — they report on the whole
+  pool, across every file and session, not just the last one served.
+- `tracelabel serve <file> --all` opts back into the old whole-db behavior: it still imports
+  `<file>` (idempotent, as always), but the queue is every trace in the db, not just that
+  file's.
 
 ## Export → pandas
 

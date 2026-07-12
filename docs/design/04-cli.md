@@ -7,7 +7,7 @@ Implemented with Typer. Entry point: `tracelabel` (also runnable as `uvx tracela
 
 ```
 tracelabel serve   [TARGET] [--task NAME] [--level turn|trace] [--annotator NAME]
-                   [--shuffle/--no-shuffle] [--db PATH] [--port N] [--no-browser] [--yes]
+                   [--shuffle/--no-shuffle] [--db PATH] [--port N] [--no-browser] [--yes] [--all]
 tracelabel import  TARGET [--from auto|ctf|adk|datadog|documents] [--db PATH]
                    [--on-conflict fail|skip] [--skip-invalid] [--as-documents]
 tracelabel export  [--task NAME] [--db PATH] [--format jsonl|csv] [--joined]
@@ -41,31 +41,47 @@ def serve(target, **cli_flags):
     port  = pick_port(cli_flags.port or 8377)          # try requested, then next 10; print choice
     acquire_lock(project_dir, port)                    # 02 §1
 
-    n = import_file(conn, cfg.data_path, source="jsonl", on_conflict="fail")  # idempotent
+    summary = import_file(conn, cfg.data_path, source="jsonl", on_conflict="fail")  # idempotent
     open_task(conn, cfg, assume_yes=cli_flags.yes)     # drift guard lives here (02 §5)
 
-    queue = build_queue(conn, cfg)                     # §3
-    app   = build_fastapi(conn, cfg, queue)            # 05
+    ids   = None if cli_flags.all else summary.trace_ids
+    queue = build_queue(conn, cfg, ids)                 # §3 — scoped to the served file by default
+    app   = build_fastapi(conn, cfg, queue)              # 05
     if not cli_flags.no_browser: open_browser(f"http://127.0.0.1:{port}")
-    print(f"tracelabel · task '{cfg.name}' ({cfg.level}-level) · http://127.0.0.1:{port}")
+    scope = f"{len(queue)} traces (whole db)" if cli_flags.all else f"{len(queue)} traces from {cfg.data_path.name}"
+    print(f"tracelabel · task '{cfg.name}' ({cfg.level}-level) · {scope} · http://127.0.0.1:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port)      # 127.0.0.1 ONLY — invariant #6
 ```
 
 One `serve` process = one task. Labeling a second dimension is a second invocation with a
 different `--task`.
 
+**File-as-lens (default, opt-out via `--all`):** the queue and progress bar are scoped to the
+traces contained in `cfg.data_path` — the ids the just-completed idempotent import reports
+back (`summary.trace_ids`, file order). The db is a shared pool: traces persist across files,
+annotations key on `(task, target_id, annotator)` and accumulate regardless of which file is
+being served. `export` and `tasks list` stay db-wide (lifetime views over the whole pool);
+only the `serve`/`suggest` queue is scoped. `serve <file> --all` still imports `<file>`
+(idempotent, as always) but then builds the queue from the whole db (`ids=None`, §3) — the
+old, pre-scoping behavior, for the rare "label everything" case.
+
 ## 3. Queue ordering (shuffle)
 
 ```python
-def build_queue(conn, cfg) -> list[str]:              # ordered trace ids
-    ids = [r[0] for r in conn.execute("SELECT id FROM traces ORDER BY imported_at, id")]
+def build_queue(conn, cfg, trace_ids: list[str] | None) -> list[str]:  # ordered trace ids
+    if trace_ids is None:
+        ids = [r[0] for r in conn.execute("SELECT id FROM traces ORDER BY imported_at, id")]
+    else:
+        ids = list(trace_ids)                          # scoped: file order, as reported by import
     seed = get_task_seed(conn, cfg.name)              # stored at task creation; stable on resume
     if seed is not None:
         random.Random(seed).shuffle(ids)
     return ids
 ```
 
-Turn order within a trace is always `idx` — only trace order shuffles.
+Turn order within a trace is always `idx` — only trace order shuffles. When scoped, file order
+(the order ids were reported by the import) replaces `imported_at, id` as the base sequential
+order before shuffling.
 
 ## 4. `import`
 
@@ -100,10 +116,13 @@ value.<field_name> ...            # one column per field in the task's resolved 
   to `json.loads` in pandas.
 - Skipped rows appear with empty values unless `--status labeled`.
 
-**`--joined`**: adds `role`, `content`, `content_type` (turn-level); at trace-level it adds
-`trace_metadata` plus either full serialized `messages` (conversation trace) or `content` +
-`content_type` (document trace) — whichever applies. Either way a pandas user never joins back
-to the source.
+**`--joined`**: adds `role`, `content`, `content_type`, `trace_metadata`, `source` (turn-level);
+at trace-level it adds `trace_metadata` plus either full serialized `messages` (conversation
+trace) or `content` + `content_type` (document trace) — whichever applies. Either way a pandas
+user never joins back to the source. `trace_metadata` is the vector for dataset/batch
+provenance (10 §5) — it's user-supplied at import time, not synthesized by tracelabel;
+`source` is the import adapter name, not a dataset tag — don't rely on it to identify which
+file a trace came from.
 
 ```python
 def export(conn, task, fmt, joined, out, status):
@@ -123,7 +142,11 @@ escalation  trace  200/200 traces  77bd01…   2026-07-09 10:22
 ## 7. `suggest`
 
 Batch pre-annotation (08). Requires the `[ai]` extra; if litellm is missing:
-`AI assist needs the optional extra: pip install 'tracelabel[ai]'`.
+`AI assist needs the optional extra: pip install 'tracelabel[ai]'`. Like `serve`, `suggest
+TARGET` runs the same idempotent import first, then scopes its targets to
+`summary.trace_ids` — `tracelabel suggest week-28.jsonl --task empathy` only suggests over
+week 28, not the whole pool. There's no `--all` for `suggest`; pass a file that covers the
+scope you want (or `--limit` a large number against the config's data file).
 
 ## 8. `demo`
 

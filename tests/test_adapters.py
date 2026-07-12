@@ -155,7 +155,7 @@ def test_import_service_orchestrates_injected_dependencies(tmp_path):
 
         def import_trace(self, trace, source, on_conflict):
             self.imported.append((trace, source, on_conflict))
-            return "inserted"
+            return "inserted", "generated-id"
 
     validator = RecordingValidator()
     repository = RecordingRepository()
@@ -163,6 +163,7 @@ def test_import_service_orchestrates_injected_dependencies(tmp_path):
     summary = service.import_file(path)
 
     assert summary.inserted == 1
+    assert summary.trace_ids == ["generated-id"]
     assert validator.validated[0][2] == 1
     assert repository.imported == [
         (
@@ -171,6 +172,36 @@ def test_import_service_orchestrates_injected_dependencies(tmp_path):
             "fail",
         )
     ]
+
+
+def test_import_summary_trace_ids_covers_all_known_results_deduped(conn, tmp_path):
+    # pre-existing rows in the db: "dup" (will be re-imported unchanged) and "keep" (will
+    # conflict on re-import with a different body, kept under --on-conflict skip)
+    conn.traces.import_trace({"id": "dup", "messages": [{"role": "user", "content": "hi"}]}, "seed")
+    conn.traces.import_trace(
+        {"id": "keep", "messages": [{"role": "user", "content": "original"}]}, "seed"
+    )
+
+    # same content twice (no id) → both derive the same generated id: inserted, then
+    # skipped_duplicate — trace_ids must only list it once (generated-id dedup)
+    same_content = {"messages": [{"role": "user", "content": "twin"}]}
+    path = write_lines(
+        tmp_path / "input.jsonl",
+        [
+            {"id": "new", "messages": [{"role": "user", "content": "fresh"}]},
+            {"id": "dup", "messages": [{"role": "user", "content": "hi"}]},
+            {"id": "keep", "messages": [{"role": "user", "content": "different"}]},
+            same_content,
+            same_content,
+        ],
+    )
+    summary = import_file(conn, path, on_conflict="skip")
+
+    assert summary.inserted == 2  # "new" + the first copy of same_content
+    assert summary.skipped_duplicate == 2  # "dup" + the second copy of same_content
+    assert summary.skipped_conflict == 1  # "keep"
+    assert summary.trace_ids[:3] == ["new", "dup", "keep"]
+    assert len(summary.trace_ids) == 4  # same_content's generated id counted once
 
 
 # ── ADP-02 / ADP-13 ─────────────────────────────────────────────────────────

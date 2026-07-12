@@ -116,11 +116,13 @@ class LabelingService:
 
     def progress(self) -> Progress:
         counts = self._annotations.target_counts(self._task(), self._config.annotator)
+        queue_set = set(self._queue)
+        scoped = [count for trace_id, count in counts.items() if trace_id in queue_set]
         return Progress(
             unit="turns" if self._config.level == "turn" else "traces",
-            total=sum(count[0] for count in counts.values()),
-            labeled=sum(count[1] for count in counts.values()),
-            skipped=sum(count[2] for count in counts.values()),
+            total=sum(count[0] for count in scoped),
+            labeled=sum(count[1] for count in scoped),
+            skipped=sum(count[2] for count in scoped),
         )
 
     def _task(self) -> sqlite3.Row:

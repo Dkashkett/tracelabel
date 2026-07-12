@@ -437,6 +437,41 @@ def test_progress_reflects_commits(turn_client):
     assert body["skipped"] == 1
 
 
+def test_progress_scoped_to_queue_excludes_other_pool_traces(tmp_path):
+    # Two traces live in the db, but the session's queue (file-as-lens) only covers t_conv.
+    conn = Database(default_db_path(tmp_path))
+    conn.traces.import_trace(TRACE_CONV, "loose")
+    conn.traces.import_trace(
+        {
+            "id": "t_conv2",
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hey"},
+            ],
+        },
+        "loose",
+    )
+    cfg = _cfg(tmp_path)
+    conn.tasks.open(cfg, assume_yes=True)
+    client = TestClient(create_app(conn, cfg, ["t_conv"]))
+
+    # Annotate a turn outside the queue's scope directly against the pool.
+    conn.annotations.upsert_annotation(
+        task=cfg.name,
+        target_type="turn",
+        target_id="t_conv2#1",
+        status="labeled",
+        values={"verdict": "pass"},
+        annotator=cfg.annotator,
+        schema_hash=cfg.schema_hash,
+        prefill_model=None,
+    )
+
+    body = client.get("/api/progress").json()
+    assert body["total"] == 2  # only t_conv's 2 assistant turns, not t_conv2's
+    assert body["labeled"] == 0  # t_conv2#1's annotation is out of scope
+
+
 # ── API-19 ───────────────────────────────────────────────────────────────────
 
 

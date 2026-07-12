@@ -90,10 +90,15 @@ class ExportService:
             turn = self._traces.get_turn(annotation["target_id"])
             if turn is None:
                 raise UserError(f"annotation target '{annotation['target_id']}' no longer exists")
+            trace = self._traces.get(trace_id)
+            if trace is None:
+                raise UserError(f"annotation target '{trace_id}' no longer exists")
             row.update(
                 role=turn["role"],
                 content=turn["content"],
                 content_type=turn["content_type"],
+                trace_metadata=self._json_object(trace["metadata"]),
+                source=trace["source"],
             )
             return row
         trace = self._traces.get(trace_id)

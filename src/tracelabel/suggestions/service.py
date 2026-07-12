@@ -59,9 +59,10 @@ class SuggestionService:
         limit: int | None,
         overwrite: bool,
         concurrency: int = 4,
+        trace_ids: list[str] | None = None,
     ) -> SuggestionSummary:
         llm = self._require_llm_config()
-        targets = self._annotations.unaddressed_targets(self._config)
+        targets = self._annotations.unaddressed_targets(self._config, trace_ids)
         if overwrite:
             skipped_existing = 0
         else:

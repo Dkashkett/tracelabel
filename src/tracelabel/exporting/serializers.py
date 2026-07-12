@@ -36,7 +36,7 @@ class CsvSerializer:
         columns = list(BASE_COLUMNS) + [f"value.{name}" for name in self._field_names]
         if self._joined:
             if self._level == "turn":
-                columns.extend(("role", "content", "content_type"))
+                columns.extend(("role", "content", "content_type", "trace_metadata", "source"))
             else:
                 columns.extend(("messages", "content", "content_type", "trace_metadata"))
         return columns
@@ -58,6 +58,11 @@ class CsvSerializer:
                 output["role"] = row["role"]
                 output["content"] = row["content"]
                 output["content_type"] = row["content_type"]
+                output["trace_metadata"] = json.dumps(
+                    row["trace_metadata"],
+                    ensure_ascii=False,
+                )
+                output["source"] = row["source"]
             else:
                 if "messages" in row:
                     output["messages"] = json.dumps(row["messages"], ensure_ascii=False)

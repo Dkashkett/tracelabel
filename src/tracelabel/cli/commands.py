@@ -27,7 +27,7 @@ from tracelabel.imports.service import ImportService, ImportSummary
 from tracelabel.suggestions.client import LiteLLMClient
 from tracelabel.suggestions.service import SuggestionService, SuggestionSummary
 
-from .output import print_import_summary, print_tasks_table
+from .output import print_import_summary, print_tasks_table, session_scope_note
 
 PortProbe = Callable[[str, int], bool]
 ServerCallable = Callable[..., None]
@@ -104,6 +104,7 @@ class ServeCommand:
         requested_port: int,
         no_browser: bool,
         assume_yes: bool,
+        serve_all: bool = False,
     ) -> None:
         path = database_path or default_db_path(project_dir)
         with self._database_factory(path) as database:
@@ -115,11 +116,14 @@ class ServeCommand:
                 )
                 print_import_summary(config.data_path, summary)
                 database.tasks.open(config, assume_yes=assume_yes)
-                queue = database.tasks.build_queue(config.name)
+                queue = database.tasks.build_queue(
+                    config.name, None if serve_all else summary.trace_ids
+                )
                 app = create_app(database, config, queue)
+                scope = session_scope_note(config.data_path, len(queue), serve_all)
                 typer.echo(
                     f"tracelabel · task '{config.name}' ({config.level}-level) · "
-                    f"http://127.0.0.1:{port}"
+                    f"{scope} · http://127.0.0.1:{port}"
                 )
                 self._server_runner.run(app, port, no_browser=no_browser)
 
@@ -198,13 +202,23 @@ class SuggestCommand:
         client = LiteLLMClient()
         path = database_path or default_db_path(project_dir)
         with Database(path) as database:
+            summary = _import_service(database).import_file(
+                config.data_path,
+                on_conflict="fail",
+            )
+            print_import_summary(config.data_path, summary)
             service = SuggestionService(
                 config,
                 database.traces,
                 database.annotations,
                 client,
             )
-            return service.run(limit=limit, overwrite=overwrite, concurrency=concurrency)
+            return service.run(
+                limit=limit,
+                overwrite=overwrite,
+                concurrency=concurrency,
+                trace_ids=summary.trace_ids,
+            )
 
 
 class DemoCommand:
