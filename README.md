@@ -1,4 +1,4 @@
-# tracelabel
+# tracelabel [![Release](https://github.com/Dkashkett/tracelabel/actions/workflows/release.yml/badge.svg)](https://github.com/Dkashkett/tracelabel/actions/workflows/release.yml)
 
 **Local-first, zero-config labeling for agent traces — keyboard-fast, no accounts, no server.**
 
