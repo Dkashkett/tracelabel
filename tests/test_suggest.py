@@ -3,10 +3,44 @@ from types import SimpleNamespace
 
 import pytest
 
-from tracelabel import db, suggest
-from tracelabel.config import LLMConfig, ResolvedTaskConfig
+from tracelabel.config.models import LLMConfig, ResolvedTaskConfig
+from tracelabel.db.database import Database, default_db_path
 from tracelabel.errors import UserError
-from tracelabel.suggest import build_prompt, run_suggest
+from tracelabel.suggestions.client import LiteLLMClient, ModelAuthenticationError
+from tracelabel.suggestions.prompts import (
+    TRANSCRIPT_BUDGET,
+    PromptBuilder,
+    TargetContext,
+    render_transcript,
+)
+from tracelabel.suggestions.service import SuggestionService
+
+
+def run_suggest(config, database, *, limit, overwrite, concurrency=4):
+    service = SuggestionService(
+        config,
+        database.traces,
+        database.annotations,
+        LiteLLMClient(),
+        retry_delays=(0, 0),
+    )
+    return service.run(limit=limit, overwrite=overwrite, concurrency=concurrency)
+
+
+def build_prompt(config, context):
+    return PromptBuilder().build(config, context)
+
+
+def load_context(database, target_id, level):
+    if level == "turn":
+        turn = database.traces.get_turn(target_id)
+        trace_id = turn["trace_id"]
+        target_index = turn["idx"]
+    else:
+        trace_id = target_id
+        target_index = None
+    return TargetContext(database.traces.get_turns(trace_id), target_id, target_index)
+
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -56,11 +90,11 @@ def _cfg(tmp_path, *, level="turn", with_llm=True, fields=None):
 
 
 def _setup(tmp_path, **cfg_kwargs):
-    conn = db.open_db(db.default_db_path(tmp_path))
-    db.import_trace(conn, TRACE_CONV, "loose")
-    db.import_trace(conn, TRACE_DOC, "loose")
+    conn = Database(default_db_path(tmp_path))
+    conn.traces.import_trace(TRACE_CONV, "loose")
+    conn.traces.import_trace(TRACE_DOC, "loose")
     cfg = _cfg(tmp_path, **cfg_kwargs)
-    db.open_task(conn, cfg, assume_yes=True)
+    conn.tasks.open(cfg, assume_yes=True)
     return conn, cfg
 
 
@@ -90,12 +124,6 @@ def _always(content: str):
     return lambda kwargs, calls: _resp(content)
 
 
-@pytest.fixture(autouse=True)
-def _no_backoff(monkeypatch):
-    # Keep retry tests fast; the values themselves are exercised implicitly by retry counts.
-    monkeypatch.setattr(suggest, "RETRY_DELAYS", (0, 0))
-
-
 # ── SUG-01 / SUG-02: preflight errors ────────────────────────────────────────
 
 
@@ -116,14 +144,30 @@ def test_missing_llm_config(tmp_path, monkeypatch):
     assert "llm:" in msg and "model:" in msg
 
 
+def test_authentication_failure_surfaces_and_is_never_stored(tmp_path, monkeypatch):
+    conn, cfg = _setup(tmp_path)
+
+    class AuthenticationError(Exception):
+        pass
+
+    fake = _install(
+        monkeypatch,
+        lambda _kwargs, _calls: (_ for _ in ()).throw(AuthenticationError("set API_KEY")),
+    )
+    fake.AuthenticationError = AuthenticationError
+
+    with pytest.raises(ModelAuthenticationError, match="set API_KEY"):
+        run_suggest(cfg, conn, limit=1, overwrite=False)
+    assert conn.connection.execute("SELECT count(*) FROM suggestions").fetchone()[0] == 0
+
+
 # ── SUG-03: target selection, idempotency, overwrite ─────────────────────────
 
 
 def test_targets_idempotent_and_overwrite(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     # Pre-annotate one target: it must be excluded as already addressed.
-    db.upsert_annotation(
-        conn,
+    conn.annotations.upsert_annotation(
         task=cfg.name,
         target_type="turn",
         target_id="t_doc#0",
@@ -163,7 +207,7 @@ def test_invalid_output_never_stored(tmp_path, monkeypatch):
     summary = run_suggest(cfg, conn, limit=1, overwrite=False)
     assert (summary.ok, summary.failed) == (0, 1)
     assert len(fake.calls) == 2  # initial + one re-ask (08 §3)
-    assert db.suggestions_for_trace(conn, cfg.name, "t_conv") == []
+    assert conn.annotations.suggestions_for_trace(cfg.name, "t_conv") == []
 
 
 def test_valid_suggestion_stored(tmp_path, monkeypatch):
@@ -171,7 +215,7 @@ def test_valid_suggestion_stored(tmp_path, monkeypatch):
     _install(monkeypatch, _always('{"verdict": "fail", "notes": "bad"}'))
     summary = run_suggest(cfg, conn, limit=1, overwrite=False)
     assert (summary.ok, summary.failed) == (1, 0)
-    rows = db.suggestions_for_trace(conn, cfg.name, "t_conv")
+    rows = conn.annotations.suggestions_for_trace(cfg.name, "t_conv")
     assert len(rows) == 1
     assert rows[0]["model"] == "gpt-4o-mini"
     assert '"verdict":"fail"' in rows[0]["values"]
@@ -192,7 +236,7 @@ def test_build_prompt_contains_fields_and_target(tmp_path):
         }
     ]
     conn, cfg = _setup(tmp_path, fields=fields)
-    ctx = suggest.load_context(conn, "t_conv#1", "turn")
+    ctx = load_context(conn, "t_conv#1", "turn")
     prompt = build_prompt(cfg, ctx)
     assert "verdict: choose exactly one of" in prompt
     assert 'error_type: choose zero or more of ["planning", "tool_use"] as a JSON array' in prompt
@@ -215,12 +259,12 @@ def test_transcript_truncation(tmp_path):
             {"role": "tool", "content": small, "tool_call_id": "c2"},
         ],
     }
-    conn = db.open_db(db.default_db_path(tmp_path))
-    db.import_trace(conn, trace, "loose")
-    turns = db.get_turns(conn, "t_big")
+    conn = Database(default_db_path(tmp_path))
+    conn.traces.import_trace(trace, "loose")
+    turns = conn.traces.get_turns("t_big")
 
-    rendered = suggest.render_transcript(turns, target_idx=None)
-    assert len(rendered) <= suggest.TRANSCRIPT_BUDGET
+    rendered = render_transcript(turns, target_index=None)
+    assert len(rendered) <= TRANSCRIPT_BUDGET
     assert "[...truncated 30000 chars...]" in rendered
     assert small in rendered  # the short tool output survives
 
@@ -249,5 +293,5 @@ def test_no_annotation_rows_created(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     _install(monkeypatch, _always('{"verdict": "pass"}'))
     run_suggest(cfg, conn, limit=None, overwrite=False)
-    assert conn.execute("SELECT count(*) FROM annotations").fetchone()[0] == 0
-    assert conn.execute("SELECT count(*) FROM suggestions").fetchone()[0] == 3
+    assert conn.connection.execute("SELECT count(*) FROM annotations").fetchone()[0] == 0
+    assert conn.connection.execute("SELECT count(*) FROM suggestions").fetchone()[0] == 3

@@ -3,9 +3,9 @@ import itertools
 import pytest
 from fastapi.testclient import TestClient
 
-from tracelabel import db
-from tracelabel.config import ResolvedTaskConfig
-from tracelabel.server import build_app
+from tracelabel.api.app import create_app
+from tracelabel.config.models import ResolvedTaskConfig
+from tracelabel.db.database import Database, default_db_path
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -69,14 +69,14 @@ def _cfg(tmp_path, *, level="turn", label_roles=None, annotator="alice"):
     )
 
 
-def build(tmp_path, *, level="turn", label_roles=None, annotator="alice"):
-    conn = db.open_db(db.default_db_path(tmp_path))
-    db.import_trace(conn, TRACE_CONV, "loose")
-    db.import_trace(conn, TRACE_DOC, "loose")
+def build(tmp_path, *, level="turn", label_roles=None, annotator="alice", clock=None):
+    conn = Database(default_db_path(tmp_path), clock=clock)
+    conn.traces.import_trace(TRACE_CONV, "loose")
+    conn.traces.import_trace(TRACE_DOC, "loose")
     cfg = _cfg(tmp_path, level=level, label_roles=label_roles, annotator=annotator)
-    db.open_task(conn, cfg, assume_yes=True)
-    queue = db.build_queue(conn, cfg.name)
-    client = TestClient(build_app(conn, cfg, queue))
+    conn.tasks.open(cfg, assume_yes=True)
+    queue = conn.tasks.build_queue(cfg.name)
+    client = TestClient(create_app(conn, cfg, queue))
     return conn, cfg, client
 
 
@@ -323,7 +323,7 @@ def test_valid_labeled_commit(tmp_path):
     assert body["status"] == "labeled"
     assert body["schema_hash"] == SCHEMA_HASH
     assert body["annotator"] == "alice"
-    row = conn.execute(
+    row = conn.connection.execute(
         "SELECT * FROM annotations WHERE task=? AND target_id=?", (cfg.name, "t_conv#1")
     ).fetchone()
     assert row is not None
@@ -333,10 +333,9 @@ def test_valid_labeled_commit(tmp_path):
 # ── API-15 ───────────────────────────────────────────────────────────────────
 
 
-def test_second_commit_updates_row(tmp_path, monkeypatch):
+def test_second_commit_updates_row(tmp_path):
     stamps = (f"2026-07-11T00:00:{n:02d}Z" for n in itertools.count(1))
-    monkeypatch.setattr(db, "now_iso", lambda: next(stamps))
-    conn, cfg, client = build(tmp_path)
+    conn, cfg, client = build(tmp_path, clock=lambda: next(stamps))
     first = client.put(
         "/api/annotations",
         json={
@@ -357,7 +356,7 @@ def test_second_commit_updates_row(tmp_path, monkeypatch):
     ).json()
     assert second["updated_at"] > first["updated_at"]
     assert second["values"] == {"verdict": "fail"}
-    n = conn.execute(
+    n = conn.connection.execute(
         "SELECT count(*) FROM annotations WHERE task=? AND target_id=?", (cfg.name, "t_conv#1")
     ).fetchone()[0]
     assert n == 1
@@ -398,7 +397,7 @@ def test_prefill_model_persisted(tmp_path):
         },
     ).json()
     assert body["prefill_model"] == "gpt-4"
-    row = conn.execute(
+    row = conn.connection.execute(
         "SELECT prefill_model FROM annotations WHERE target_id=?", ("t_conv#1",)
     ).fetchone()
     assert row["prefill_model"] == "gpt-4"
@@ -433,8 +432,7 @@ def test_progress_reflects_commits(turn_client):
 
 def test_suggestions_not_merged_into_annotations(tmp_path):
     conn, cfg, client = build(tmp_path)
-    db.upsert_suggestion(
-        conn,
+    conn.annotations.upsert_suggestion(
         task=cfg.name,
         target_type="turn",
         target_id="t_conv#1",
@@ -455,11 +453,11 @@ def test_spa_fallback_and_api_404(tmp_path):
     static_dir = tmp_path / "static"
     static_dir.mkdir()
     (static_dir / "index.html").write_text("<!doctype html>MARKER", encoding="utf-8")
-    conn = db.open_db(db.default_db_path(tmp_path / "proj"))
-    db.import_trace(conn, TRACE_CONV, "loose")
+    conn = Database(default_db_path(tmp_path / "proj"))
+    conn.traces.import_trace(TRACE_CONV, "loose")
     cfg = _cfg(tmp_path)
-    db.open_task(conn, cfg, assume_yes=True)
-    client = TestClient(build_app(conn, cfg, ["t_conv"], static_dir=static_dir))
+    conn.tasks.open(cfg, assume_yes=True)
+    client = TestClient(create_app(conn, cfg, ["t_conv"], static_dir=static_dir))
 
     page = client.get("/some/spa/route")
     assert page.status_code == 200
@@ -474,8 +472,8 @@ def test_missing_frontend_503(tmp_path):
     empty_static = tmp_path / "empty-static"
     empty_static.mkdir()
     conn, cfg, _ = build(tmp_path)
-    queue = db.build_queue(conn, cfg.name)
-    client = TestClient(build_app(conn, cfg, queue, static_dir=empty_static))
+    queue = conn.tasks.build_queue(cfg.name)
+    client = TestClient(create_app(conn, cfg, queue, static_dir=empty_static))
     r = client.get("/")
     assert r.status_code == 503
     assert "npm run build" in r.json()["detail"]

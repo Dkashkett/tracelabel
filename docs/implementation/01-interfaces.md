@@ -349,13 +349,13 @@ def build_prompt(cfg: ResolvedTaskConfig, ctx: TargetContext) -> str    # 08 §3
 TRANSCRIPT_BUDGET = 24_000            # chars; truncate longest tool outputs first (08 §3)
 ```
 
-## 10. `cli.py` + `__main__.py` (P8)
+## 10. `cli/app.py` + `__main__.py` (P8)
 
 Spec: `04-cli.md` (all).
 
 Typer app named `app`; commands `serve, import (name="import"), export, tasks list, suggest,
 demo` with the exact flags of 04 §1. The pyproject entry point and `__main__.py` both target
-`run` (not `app`): `tracelabel = "tracelabel.cli:run"`.
+`run` (not `app`): `tracelabel = "tracelabel.cli.app:run"`.
 
 ```python
 def pick_port(requested: int = 8377) -> int    # try requested…requested+9; exhausted → EnvError

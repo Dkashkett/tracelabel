@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
-from tracelabel.ctf import content_type_of, validate_ctf_line
+from tracelabel.ctf.content import content_type_of
+from tracelabel.ctf.validation import CtfValidator
+
+validate_ctf_line = CtfValidator().validate_line
 
 TRACES_PATH = Path(__file__).parent.parent / "src" / "tracelabel" / "demo_data" / "traces.jsonl"
 

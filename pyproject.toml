@@ -21,7 +21,7 @@ ai = ["litellm"]
 dev = ["pytest", "hypothesis", "httpx", "ruff", "mypy", "pre-commit"]
 
 [project.scripts]
-tracelabel = "tracelabel.cli:run"
+tracelabel = "tracelabel.cli.app:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tracelabel"]

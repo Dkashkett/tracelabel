@@ -3,19 +3,36 @@ from pathlib import Path
 
 import pytest
 
-from tracelabel import db
-from tracelabel.adapters import (
-    AdkAdapter,
-    CtfAdapter,
-    DatadogAdapter,
-    LooseAdapter,
-    detect,
-    import_file,
-    iter_source,
-)
+from tracelabel.ctf.validation import CtfValidator
+from tracelabel.db.database import Database, default_db_path
 from tracelabel.errors import UserError
+from tracelabel.imports.adapters.adk import AdkAdapter
+from tracelabel.imports.adapters.base import AdapterRegistry
+from tracelabel.imports.adapters.ctf import CtfAdapter
+from tracelabel.imports.adapters.datadog import DatadogAdapter
+from tracelabel.imports.adapters.loose import LooseAdapter
+from tracelabel.imports.parsing import iter_source as parse_source
+from tracelabel.imports.service import ImportService
 
 GOLDEN = Path(__file__).parent / "golden"
+
+
+def detect(values):
+    return AdapterRegistry.default().detect(values)
+
+
+def iter_source(path, from_="auto", as_documents=False):
+    return parse_source(
+        path,
+        AdapterRegistry.default(),
+        from_=from_,
+        as_documents=as_documents,
+    )
+
+
+def import_file(database, path, **kwargs):
+    service = ImportService(AdapterRegistry.default(), CtfValidator(), database.traces)
+    return service.import_file(path, **kwargs)
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -23,9 +40,9 @@ GOLDEN = Path(__file__).parent / "golden"
 
 @pytest.fixture
 def conn(tmp_path):
-    c = db.open_db(db.default_db_path(tmp_path))
-    yield c
-    c.close()
+    database = Database(default_db_path(tmp_path))
+    yield database
+    database.close()
 
 
 def write_lines(path: Path, objs) -> Path:
@@ -65,6 +82,80 @@ def test_detect_priority_order():
 
     # ctf wins over loose when both could plausibly match (priority order)
     assert isinstance(detect([ctf, loose]), CtfAdapter)
+
+
+def test_registry_honors_injected_order_and_returns_fresh_adapters():
+    calls = []
+
+    class FakeAdapter:
+        def __init__(self, name, matches):
+            self.name = name
+            self._matches = matches
+
+        def sniff(self, first_values):
+            calls.append(self.name)
+            return self._matches
+
+        def to_ctf(self, value):
+            yield value
+
+    registry = AdapterRegistry(
+        (
+            lambda: FakeAdapter("first", False),
+            lambda: FakeAdapter("second", True),
+            lambda: FakeAdapter("third", True),
+        )
+    )
+    selected = registry.detect([{"value": 1}])
+    assert selected.name == "second"
+    assert calls == ["first", "second"]
+    assert registry.select("second", []) is not registry.select("second", [])
+
+
+def test_import_service_orchestrates_injected_dependencies(tmp_path):
+    path = write_lines(tmp_path / "input.jsonl", [{"value": "raw"}])
+
+    class FakeAdapter:
+        name = "fake"
+
+        def sniff(self, first_values):
+            return True
+
+        def to_ctf(self, value):
+            yield {"messages": [{"role": "user", "content": value["value"]}]}
+
+    class RecordingValidator:
+        def __init__(self):
+            self.validated = []
+
+        def fold_unknown_keys(self, trace):
+            return trace, []
+
+        def validate_line(self, trace, file, line_number):
+            self.validated.append((trace, file, line_number))
+
+    class RecordingRepository:
+        def __init__(self):
+            self.imported = []
+
+        def import_trace(self, trace, source, on_conflict):
+            self.imported.append((trace, source, on_conflict))
+            return "inserted"
+
+    validator = RecordingValidator()
+    repository = RecordingRepository()
+    service = ImportService(AdapterRegistry((FakeAdapter,)), validator, repository)
+    summary = service.import_file(path)
+
+    assert summary.inserted == 1
+    assert validator.validated[0][2] == 1
+    assert repository.imported == [
+        (
+            {"messages": [{"role": "user", "content": "raw"}]},
+            "fake",
+            "fail",
+        )
+    ]
 
 
 # ── ADP-02 / ADP-13 ─────────────────────────────────────────────────────────
@@ -287,9 +378,9 @@ def test_import_file_pipeline(tmp_path, conn):
     summary = import_file(conn, path)
     assert summary.inserted == 2
 
-    trace = db.get_trace(conn, "t1")
+    trace = conn.traces.get("t1")
     assert trace is not None and trace["source"] == "ctf"
-    turns = db.get_turns(conn, "t1")
+    turns = conn.traces.get_turns("t1")
     assert [t["role"] for t in turns] == ["user", "assistant"]
     assert [t["id"] for t in turns] == ["t1#0", "t1#1"]
 

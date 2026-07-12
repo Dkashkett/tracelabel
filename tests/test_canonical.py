@@ -3,7 +3,8 @@ import json
 from hypothesis import given
 from hypothesis import strategies as st
 
-from tracelabel.ctf import canonical_json, content_hash, derive_trace_id, serialize_content
+from tracelabel.ctf.content import serialize_content
+from tracelabel.ctf.hashing import canonical_json, content_hash, derive_trace_id
 
 # JSON-ish dicts with unicode string keys/values.
 _json_scalars = st.one_of(

@@ -26,7 +26,7 @@ shell with the dev proxy.
 - `dependencies = ["fastapi", "uvicorn", "pydantic>=2", "typer", "pyyaml"]` — exactly these
   five (CLAUDE.md non-negotiable). Extras: `ai = ["litellm"]`,
   `dev = ["pytest", "hypothesis", "httpx"]`.
-- `[project.scripts] tracelabel = "tracelabel.cli:run"` (`run` is the error-handling
+- `[project.scripts] tracelabel = "tracelabel.cli.app:run"` (`run` is the error-handling
   wrapper from `01-interfaces.md` §10; the P0 stub is just `def run() -> None: app()`).
 - Hatch config: packages from `src/`; **include** `src/tracelabel/static/**` and
   `src/tracelabel/demo_data/**` as package data (`artifacts`, since `static/` is gitignored).
@@ -34,7 +34,7 @@ shell with the dev proxy.
 **Python stubs:** `errors.py` fully implemented per `01-interfaces.md` §2. Every other module
 is a stub that imports cleanly (empty file or, in `cli.py`, a minimal
 `app = typer.Typer()` plus the `run()` wrapper stub so `tracelabel --help` runs).
-`__main__.py`: `from tracelabel.cli import run; run()` guarded by
+`__main__.py`: `from tracelabel.cli.app import run; run()` guarded by
 `if __name__ == "__main__":`. `__init__.py`: `__version__ = "0.1.0"` only.
 
 **`.gitignore`:** `src/tracelabel/static/` (CI-populated — 09 §1), `frontend/node_modules/`,

@@ -3,15 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from tracelabel.ctf import (
-    CtfError,
-    content_type_of,
-    derive_trace_id,
-    detect_content_type,
-    fold_unknown_keys,
-    serialize_content,
-    validate_ctf_line,
-)
+from tracelabel.ctf.content import content_type_of, detect_content_type, serialize_content
+from tracelabel.ctf.hashing import derive_trace_id
+from tracelabel.ctf.validation import CtfError, CtfValidator
+
+_validator = CtfValidator()
+fold_unknown_keys = _validator.fold_unknown_keys
+validate_ctf_line = _validator.validate_line
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ctf"
 

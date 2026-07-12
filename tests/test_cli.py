@@ -5,12 +5,28 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tracelabel import cli
-from tracelabel.config import CliArgs, raw_config_for_target, resolve
-from tracelabel.db import default_db_path, open_db, open_task
+import tracelabel.cli.app as cli
+import tracelabel.cli.commands as commands
+from tracelabel.config.loader import raw_config_for_target
+from tracelabel.config.models import CliArgs
+from tracelabel.config.resolver import ConfigResolver
+from tracelabel.ctf.validation import CtfValidator
+from tracelabel.db.database import Database, default_db_path
 from tracelabel.errors import EnvError
+from tracelabel.imports.adapters.base import AdapterRegistry
+from tracelabel.imports.service import ImportService
 
 runner = CliRunner()
+
+
+def resolve(raw, args):
+    return ConfigResolver().resolve(raw, args)
+
+
+def import_file(database, path):
+    service = ImportService(AdapterRegistry.default(), CtfValidator(), database.traces)
+    return service.import_file(path)
+
 
 TRACE = {
     "id": "t_one",
@@ -38,9 +54,9 @@ def _no_serve(monkeypatch):
         calls["host"] = host
         calls["port"] = port
 
-    monkeypatch.setattr(cli.uvicorn, "run", fake_uvicorn)
-    monkeypatch.setattr(cli.webbrowser, "open", lambda url: calls.setdefault("browser", url))
-    monkeypatch.setattr(cli, "acquire_lock", lambda project_dir, port: None)
+    monkeypatch.setattr(commands.uvicorn, "run", fake_uvicorn)
+    monkeypatch.setattr(commands.webbrowser, "open", lambda url: calls.setdefault("browser", url))
+    monkeypatch.setattr(commands, "port_is_available", lambda _host, _port: True)
     return calls
 
 
@@ -68,7 +84,9 @@ def test_exit_code_user_error(tmp_path, monkeypatch):
 def test_exit_code_env_error(tmp_path, monkeypatch):
     data = _write_data(tmp_path)
     monkeypatch.setattr(
-        cli, "pick_port", lambda requested=8377: (_ for _ in ()).throw(EnvError("no ports"))
+        commands.ServerRunner,
+        "pick_port",
+        lambda _self, requested=8377: (_ for _ in ()).throw(EnvError("no ports")),
     )
     assert _run_cli(monkeypatch, ["serve", str(data), "--no-browser", "--yes"]) == 2
 
@@ -77,32 +95,12 @@ def test_exit_code_env_error(tmp_path, monkeypatch):
 
 
 def test_pick_port_fallback_and_exhaustion():
-    import socket
+    busy = {8377, 8378, 8379}
+    chosen = commands.pick_port(8377, probe=lambda _host, port: port not in busy)
+    assert chosen == 8380
 
-    held = []
-    for base in range(8377, 8377 + 3):  # occupy first three ports of the range
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("127.0.0.1", base))
-        held.append(s)
-    try:
-        chosen = cli.pick_port(8377)
-        assert chosen == 8380  # skipped the three taken ones
-    finally:
-        for s in held:
-            s.close()
-
-    # Exhaust the whole 10-port window → EnvError.
-    held = []
-    try:
-        for base in range(9000, 9010):
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(("127.0.0.1", base))
-            held.append(s)
-        with pytest.raises(EnvError):
-            cli.pick_port(9000)
-    finally:
-        for s in held:
-            s.close()
+    with pytest.raises(EnvError):
+        commands.pick_port(9000, probe=lambda _host, _port: False)
 
 
 # ── CLI-03: import summary line ───────────────────────────────────────────────
@@ -125,12 +123,10 @@ def test_import_summary_output(tmp_path):
 def test_tasks_list_output(tmp_path):
     data = _write_data(tmp_path)
     db_path = default_db_path(tmp_path)
-    conn = open_db(db_path)
-    from tracelabel.adapters import import_file
-
+    conn = Database(db_path)
     import_file(conn, data)
     cfg = resolve(raw_config_for_target(data), CliArgs(task="mytask"))
-    open_task(conn, cfg, assume_yes=True)
+    conn.tasks.open(cfg, assume_yes=True)
     conn.close()
 
     r = runner.invoke(cli.app, ["tasks", "list", "--db", str(db_path)])
@@ -187,16 +183,11 @@ def test_target_routing(tmp_path):
 def test_stderr_stdout_separation(tmp_path):
     data = _write_data(tmp_path)
     db_path = default_db_path(tmp_path)
-    conn = open_db(db_path)
-    from tracelabel.adapters import import_file
-
+    conn = Database(db_path)
     import_file(conn, data)
     cfg = resolve(raw_config_for_target(data), CliArgs(task="t"))
-    open_task(conn, cfg, assume_yes=True)
-    from tracelabel.db import upsert_annotation
-
-    upsert_annotation(
-        conn,
+    conn.tasks.open(cfg, assume_yes=True)
+    conn.annotations.upsert_annotation(
         task="t",
         target_type="trace",
         target_id="t_one",

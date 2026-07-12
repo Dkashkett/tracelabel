@@ -3,20 +3,25 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from tracelabel.config import (
-    DEFAULT_FIELDS,
-    CliArgs,
-    FieldDef,
-    RawConfig,
+from tracelabel.config.loader import load_config, raw_config_for_target
+from tracelabel.config.models import CliArgs, FieldDef, RawConfig
+from tracelabel.config.presets import DEFAULT_FIELDS
+from tracelabel.config.resolver import (
+    ConfigResolver,
     canonical_field_dict,
     default_task_name,
-    load_config,
-    raw_config_for_target,
-    resolve,
     schema_hash,
-    validate_annotation_values,
 )
+from tracelabel.config.validation import AnnotationValidator, format_config_validation_error
 from tracelabel.errors import UserError
+
+
+def resolve(raw: RawConfig, cli: CliArgs):
+    return ConfigResolver().resolve(raw, cli)
+
+
+def validate_annotation_values(values, status, fields):
+    AnnotationValidator(fields).validate(values, status)
 
 
 def _pass_fail_yaml() -> RawConfig:
@@ -116,12 +121,10 @@ def test_api_key_in_yaml_rejected():
 def load_config_from_dict(d: dict) -> RawConfig:
     from pydantic import ValidationError
 
-    from tracelabel.config import _format_validation_error
-
     try:
         return RawConfig.model_validate(d)
     except ValidationError as e:
-        raise _format_validation_error(e, "config.yaml") from e
+        raise format_config_validation_error(e, "config.yaml") from e
 
 
 # CFG-10

@@ -1,4 +1,4 @@
-from tracelabel.cli import run
+from tracelabel.cli.app import run
 
 if __name__ == "__main__":
     run()
