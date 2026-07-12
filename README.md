@@ -10,8 +10,7 @@ that bundles a FastAPI server, a prebuilt React app, and SQLite — one `.db` fi
 uvx tracelabel demo
 ```
 
-![demo](docs/demo.gif)
-<!-- GIF placeholder: `uvx tracelabel demo` → browser opens → press `j` `1` `Enter` → a label is saved. -->
+![demo](https://raw.githubusercontent.com/Dkashkett/tracelabel/main/docs/demo.gif)
 
 Press `j` to jump to the first labelable turn, `1` to mark it **pass**, `Enter` to commit and
 advance. That's the whole loop.
@@ -24,7 +23,8 @@ tracelabel serve traces.jsonl         # opens http://127.0.0.1:8377 in your brow
 tracelabel export                     # → <task>-annotations.jsonl
 ```
 
-Your traces are a UTF-8 [JSONL](docs/trace-format.md) file, one trace per line. No config needed
+Your traces are a UTF-8 [JSONL](https://github.com/Dkashkett/tracelabel/blob/main/docs/trace-format.md)
+file, one trace per line. No config needed
 — tracelabel defaults to a turn-level pass/fail task. Point it at a file and start labeling.
 
 Labeling freeform documents (notes, transcripts, policy pages) instead of agent traces works
@@ -90,7 +90,8 @@ df = pd.read_json("empathy-annotations.jsonl", lines=True)
 df.groupby("task")["values"].apply(lambda v: (pd.json_normalize(v)["verdict"] == "pass").mean())
 ```
 
-See [`docs/pandas.md`](docs/pandas.md) for a groupby recipe per field type.
+See [`docs/pandas.md`](https://github.com/Dkashkett/tracelabel/blob/main/docs/pandas.md) for a
+groupby recipe per field type.
 
 ## When to use something else
 
