@@ -33,12 +33,18 @@ publish the launch-facing docs. Distribution is the killer feature — users nev
   `frontend/`.
 - Spawn `tracelabel demo --port 8399 --no-browser`; poll `/api/session` until ready
   (bounded by the 3 s cold-start NFR ×5 for CI slack).
-- Drive: press `j` (first labelable turn focused — assert the accent ring) → `1` (verdict
-  "pass" selected) → `r`, type a reason → `Control+Enter` (commits from a focused textarea
-  per 06 §2 and now 09 §4; plain `Enter` in a textarea inserts a newline, so `Esc` → `Enter`
-  in NAV mode is an equivalent alternative).
-- Assert: saved indicator appears; `GET /api/progress` shows `labeled == 1`; and — the real
-  proof — a fresh `GET /api/traces/{id}` returns the annotation with the typed reasoning.
+- The bundled `demo` runs the zero-config default, which is a **trace-level** pass/fail task
+  (design 03 §2, default `level: trace`), so the label target is the whole trace. The per-turn
+  `j` navigation and accent ring are turn-level affordances (`turnLevel && …` in `TracePane`)
+  and do not apply here — the earlier turn-level phrasing of this bullet was a packet-doc bug.
+- Drive: press `1` (verdict "pass" selected on the primary select) → `r`, wait for the
+  reasoning textarea to focus (it focuses on the next animation frame), type a reason →
+  `Control+Enter` (commits from a focused textarea per 06 §2 and 09 §4; plain `Enter` in a
+  textarea inserts a newline, so `Esc` → `Enter` in NAV mode is an equivalent alternative).
+- Assert: `GET /api/progress` shows `labeled == 1`; a fresh `GET /api/traces/{id}` returns the
+  annotation with the typed reasoning (the real proof); and the ●saved indicator appears — but
+  since commit optimistically advances to the next trace, step back (`p`) to the labeled trace
+  to observe it.
 - Add to `ci.yml` as a `smoke` job (Linux only is acceptable for PR CI; release runs it on
   the wheel).
 - Also add the CI grep guard from P9: fail if `dangerouslySetInnerHTML` appears under

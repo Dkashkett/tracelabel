@@ -1,0 +1,12 @@
+{
+  "name": "tracelabel-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Playwright smoke test — protects the entire pitch. Never a dependency of the wheel or frontend/.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

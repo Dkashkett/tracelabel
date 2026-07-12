@@ -35,7 +35,44 @@ jobs:
           node-version: "20"
       - name: Install dependencies
         run: npm install
+      # No dangerouslySetInnerHTML anywhere — HTML traces render only in a sandboxed iframe (09 §2).
+      - name: Guard against dangerouslySetInnerHTML
+        run: |
+          if grep -rn "dangerouslySetInnerHTML" src/; then
+            echo "::error::dangerouslySetInnerHTML is banned — render untrusted HTML in a sandboxed iframe (06 §4)"
+            exit 1
+          fi
       - name: Typecheck
         run: npm run typecheck
       - name: Build
         run: npm run build
+
+  # E2E-01: the one test that protects the pitch. Linux-only for PR CI is acceptable; release
+  # re-runs it against the built wheel (09 §4).
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build SPA and vendor it into the package
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+          rm -rf src/tracelabel/static
+          mkdir -p src/tracelabel/static
+          cp -r frontend/dist/* src/tracelabel/static/
+      - name: check-static (PKG-01)
+        run: test -f src/tracelabel/static/index.html
+      - name: Install package
+        run: pip install -e .
+      - name: Run Playwright smoke
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test

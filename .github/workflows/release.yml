@@ -1,0 +1,76 @@
+name: Release
+
+# Tag-triggered: build the SPA, bundle it into one wheel, prove the wheel works end-to-end,
+# then publish to PyPI. Distribution is the killer feature — users never touch Node (09 §1).
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # trusted publishing to PyPI
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 1. Build the frontend.
+      - name: Build SPA
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      # 2. Copy the hashed dist into the package so hatch ships it inside the wheel.
+      - name: Vendor SPA into package
+        run: |
+          rm -rf src/tracelabel/static
+          mkdir -p src/tracelabel/static
+          cp -r frontend/dist/* src/tracelabel/static/
+
+      # 3. PKG-01: never ship a wheel without the UI.
+      - name: check-static
+        run: |
+          if [ ! -f src/tracelabel/static/index.html ]; then
+            echo "::error::src/tracelabel/static/index.html is missing — refusing to build a wheel without the UI"
+            exit 1
+          fi
+
+      # 4. Build the wheel, install it in a clean venv, and prove it runs.
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip hatch
+          hatch build
+
+      - name: Install built wheel in a clean venv
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/python -m pip install --upgrade pip
+          /tmp/clean/bin/python -m pip install dist/tracelabel-*.whl
+
+      # PKG-02: both entry points work from the installed wheel.
+      - name: check entry points (PKG-02)
+        run: |
+          /tmp/clean/bin/tracelabel --help
+          /tmp/clean/bin/python -m tracelabel --help
+
+      # E2E-01 against the *installed* wheel — the SPA it serves is the one shipped in the wheel.
+      - name: Playwright smoke on the wheel
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          PATH="/tmp/clean/bin:$PATH" npx playwright test
+
+      # 5. Publish.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
