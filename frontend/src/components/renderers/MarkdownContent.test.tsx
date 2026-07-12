@@ -18,7 +18,7 @@ describe("MarkdownContent", () => {
     expect(screen.getByText("2")).toBeTruthy();
   });
 
-  it("never renders an embedded <script> tag as live markup (no dangerouslySetInnerHTML)", () => {
+  it("never renders an embedded <script> tag as live markup", () => {
     render(<MarkdownContent content={"hi <script>window.__pwned = true;</script> there"} />);
     expect(document.querySelector("script")).toBeNull();
     expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
