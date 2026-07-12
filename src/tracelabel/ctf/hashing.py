@@ -20,3 +20,12 @@ def derive_trace_id(messages: list[Json]) -> str:
 
 def content_hash(messages: list[Json]) -> str:
     return sha256_hex(canonical_json(messages))
+
+
+def derive_document_id(content: str) -> str:
+    """Derive an ID from document content, never from a user-provided value."""
+    return "d_" + sha256_hex(content)[:32]
+
+
+def document_content_hash(content: str, content_type: str | None) -> str:
+    return sha256_hex(canonical_json({"content": content, "content_type": content_type}))

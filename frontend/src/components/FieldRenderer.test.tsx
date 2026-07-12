@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import type { ResolvedField } from "@/api/types";
+import { describe, expect, it } from "vitest";
+import type { ResolvedField } from "../api/types";
 import { FieldRenderer } from "./FieldRenderer";
 import { HtmlFrame } from "./renderers/HtmlFrame";
 

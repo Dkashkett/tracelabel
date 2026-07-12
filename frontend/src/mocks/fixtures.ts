@@ -38,7 +38,7 @@ const session: SessionInfo = {
       placeholder: "Optional notes on why…",
     },
   ],
-  label_roles: ["assistant", "document"],
+  label_roles: ["assistant"],
   annotator: "dan",
   schema_hash: "sha256:demo0000",
   shuffle: false,
@@ -47,7 +47,7 @@ const session: SessionInfo = {
 function turn(t: Partial<Turn> & Pick<Turn, "id" | "idx" | "role" | "content">): Turn {
   return {
     content_type: "text",
-    labelable: t.role === "assistant" || t.role === "document",
+    labelable: t.role === "assistant",
     metadata: {},
     ...t,
   };
@@ -107,14 +107,14 @@ const tTool: TraceDetail = {
   },
 };
 
-// ── Trace 2: a mixed-parts document ──
+// ── Trace 2: an assistant turn with mixed-parts content ──
 const tParts: TraceDetail = {
   trace: { id: "t_parts", source: "demo", metadata: {} },
   turns: [
     turn({
       id: "t_parts#0",
       idx: 0,
-      role: "document",
+      role: "assistant",
       content_type: "parts",
       content: JSON.stringify([
         { type: "text", text: "I found this record in the database:" },
@@ -130,19 +130,35 @@ const tParts: TraceDetail = {
 // ── Trace 3: an HTML document (sandbox proof: the inline script must not run) ──
 const tHtml: TraceDetail = {
   trace: { id: "t_html", source: "demo", metadata: {} },
-  turns: [
-    turn({
-      id: "t_html#0",
-      idx: 0,
-      role: "document",
-      content_type: "html",
-      content:
-        "<!doctype html><html><body><h1>Quarterly Report</h1>" +
-        "<p>Revenue up <strong>12%</strong> QoQ.</p>" +
-        "<script>document.body.innerHTML = 'ESCAPED SANDBOX';</script>" +
-        "</body></html>",
-    }),
-  ],
+  turns: [],
+  document: {
+    content_type: "html",
+    content:
+      "<!doctype html><html><body><h1>Quarterly Report</h1>" +
+      "<p>Revenue up <strong>12%</strong> QoQ.</p>" +
+      "<script>document.body.innerHTML = 'ESCAPED SANDBOX';</script>" +
+      "</body></html>",
+  },
+  annotations: {},
+  suggestions: {},
+};
+
+// ── Trace 5: a markdown document, trace-level labeling ──
+const tMarkdown: TraceDetail = {
+  trace: { id: "t_markdown", source: "demo", metadata: { path: "notes.md" } },
+  turns: [],
+  document: {
+    content_type: "markdown",
+    content:
+      "# Release notes\n\n" +
+      "- Added **document** labeling\n" +
+      "- Fixed a bug in the *queue*\n\n" +
+      "| Feature | Status |\n" +
+      "| --- | --- |\n" +
+      "| Markdown | done |\n" +
+      "| HTML | done |\n\n" +
+      "See [the docs](https://example.com) for details.",
+  },
   annotations: {},
   suggestions: {},
 };
@@ -178,9 +194,10 @@ const traces: Record<string, TraceDetail> = {
   t_tool: tTool,
   t_parts: tParts,
   t_html: tHtml,
+  t_markdown: tMarkdown,
   t_big: bigTrace(),
 };
-const order = ["t_tool", "t_parts", "t_html", "t_big"];
+const order = ["t_tool", "t_parts", "t_html", "t_markdown", "t_big"];
 
 function traceIdOf(targetId: string): string {
   return targetId.includes("#") ? targetId.slice(0, targetId.indexOf("#")) : targetId;

@@ -11,6 +11,7 @@ class FromChoice(str, Enum):
     ctf = "ctf"
     adk = "adk"
     datadog = "datadog"
+    documents = "documents"
 
 
 class OnConflictChoice(str, Enum):

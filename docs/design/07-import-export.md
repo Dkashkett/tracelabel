@@ -12,9 +12,9 @@ source file ─▶ detect/route ─▶ adapter.to_ctf() ─▶ validate CTF ─�
 
 ```python
 class Adapter(Protocol):
-    name: str                                   # "ctf" | "adk" | "datadog" | ...
-    def sniff(self, first_lines: list[dict]) -> bool: ...     # cheap detection for --from auto
-    def to_ctf(self, obj: dict) -> Iterator[dict]: ...        # one source obj → ≥1 CTF traces
+    name: str                                   # "ctf" | "adk" | "datadog" | "documents" | "loose"
+    def sniff(self, first_values: list[Any]) -> bool: ...     # cheap detection for --from auto
+    def to_ctf(self, value: Any) -> Iterator[dict]: ...       # one source value → ≥1 CTF traces/documents
 ```
 
 Adapters must: map every field they understand, dump everything else into `raw` (trace- and
@@ -22,20 +22,23 @@ turn-level), set `source`, and **never reformat content strings** (invariant #1)
 
 ## 2. `--from auto` detection (default)
 
-Ordered sniff over the first 5 parsed lines; first match wins; ties never happen because the
+Ordered sniff over the first 5 parsed values; first match wins; ties never happen because the
 order is priority:
 
 ```python
-def detect(first_lines) -> Adapter:
-    for adapter in [CtfAdapter, AdkAdapter, DatadogAdapter, LooseAdapter]:
-        if adapter.sniff(first_lines): return adapter
+def detect(first_values) -> Adapter:
+    for adapter in [CtfAdapter, AdkAdapter, DatadogAdapter, DocumentsAdapter, LooseAdapter]:
+        if adapter.sniff(first_values): return adapter
     die_with_format_help()          # §5
 
 # Sniff rules (normative):
-# Ctf:      has "messages": list of dicts with "role"
-# Adk:      has "events" list with "author"/"invocation_id" keys, or ADK session envelope
-# Datadog:  has "spans" (or is a span) with "meta" containing "input.messages"/"output.messages"
-# Loose:    handles common near-misses (§3)
+# Ctf:        has "messages": list of dicts with "role"
+# Adk:        has "events" list with "author"/"invocation_id" keys, or ADK session envelope
+# Datadog:    has "spans" (or is a span) with "meta" containing "input.messages"/"output.messages"
+# Documents:  a bare string, or a dict with a string "content" and NO "messages"/"role" key
+#             (the no-"messages"/"role" guard means a CTF trace or a Loose near-miss is never
+#             swallowed as a document — this ordering is why Documents sits before Loose)
+# Loose:      handles common near-misses (§3)
 ```
 
 ## 3. LooseAdapter — the bounce-risk killer
@@ -46,28 +49,77 @@ Most users arrive with *almost*-CTF data. Accept it:
 |---|---|
 | bare list of message dicts (`[{"role":..,"content":..}, ...]`) — i.e. a raw OpenAI messages array per line | wrap as `{"messages": [...]}` |
 | `{"conversation": [...]}` / `{"turns": [...]}` / `{"chat": [...]}` | rename key to `messages`; note in summary |
-| a plain string per line | single-turn `document` trace |
 | message dicts with `"speaker"`/`"from"` instead of `"role"` | rename; map `human→user`, `ai/bot/agent→assistant` |
 | LangSmith-style run exports with `inputs.messages` / `outputs` | best-effort map to messages; extras → `raw` |
+
+A bare string per line, or an object shaped like a document, never reaches LooseAdapter — the
+`documents` adapter (§4) sniffs those first.
 
 Anything mapped by LooseAdapter prints one summary line so the user knows what happened
 (`interpreted "turns" as "messages" on 412 lines`). Ambiguous beyond these rules → §5 error.
 
-## 4. Documents (`--as-documents`)
+## 4. Documents
 
-Explicit wrapper for freeform corpora, bypassing detection:
+Two ways to get freeform text/JSON/HTML/Markdown into a project, both producing `DocumentIn`
+(01 §5) rather than a conversation trace.
 
-```python
-def as_documents(path) -> Iterator[dict]:
-    if path.suffix == ".jsonl":
-        for line in lines: yield doc(line if is_string(line) else raw_line_text(line))
-    else:                                    # .txt/.html/.json: whole file = one document
-        yield doc(path.read_text())
+**JSONL of documents.** Each line is either a bare string, or an object with a required string
+`content` and optional `id`/`metadata`/`content_type`:
 
-def doc(s): return {"messages": [{"role": "document", "content": s}]}   # content verbatim
+```jsonl
+"Just a plain line of text."
+{"content": "# md heading", "content_type": "markdown", "id": "d1"}
 ```
 
-Content-type detection (01 §4) then tags text/json/html for rendering.
+A bare string defaults `content_type` to `"text"`. An object may set `content_type` explicitly;
+one that's shaped like a document (has `content`, no `messages`/`role`) but is missing a string
+`content` field is a loud `CtfError` with a fixed example — there is **no** silent
+keep-raw-line-verbatim fallback (an earlier version had one; it mislabeled malformed lines
+without telling anyone, so it's gone pre-release).
+
+`DocumentsAdapter.sniff` matches a bare string, or a dict with a string `content` and no
+`messages`/`role` key — the guard against `messages`/`role` is what keeps CTF traces and Loose
+near-misses from ever being swallowed as documents (§2).
+
+**Directory of files** — the folder-of-docs quick start (`tracelabel serve ./docs`,
+`tracelabel import ./docs`): a non-recursive scan of `sorted(path.iterdir())`. Files with a
+mapped extension import as one document each; hidden files, `.json`/`.jsonl`/`.db`, and unknown
+extensions are skipped with a summary note (`"skipped N unsupported files"`); zero importable
+files is a `UserError`.
+
+```python
+DOCUMENT_EXTENSIONS = {
+    ".md": "markdown", ".markdown": "markdown",
+    ".txt": "text",    ".text": "text",
+    ".html": "html",   ".htm": "html",
+}
+```
+
+Extension is both the "is this a document" signal for directory scans and the `content_type`
+source — no sniffing needed there. Document id = the filename (`notes.md`), with `#`
+sanitized to `_` (turn ids use `{trace_id}#{idx}`, so `#` in a trace id would collide with that
+scheme); the real path goes in `metadata.path`. Filename ids are stable across content edits and
+keep the queue UI (which renders `trace_id`) showing readable names with no frontend change; two
+identical files under different names stay distinct since ids are path-derived, not content-hash
+derived.
+
+A single bare document file (`tracelabel import notes.md`) is **not** a supported target — it
+has no use case distinct from a one-line JSONL or a one-file directory, and it's ambiguous
+whether the user meant "this file is a document" or "this file lists documents". Rejected with
+a message pointing at a JSONL of documents or a directory of files (loader-level, before any
+adapter runs).
+
+`--as-documents` is an alias for `--from documents` on JSONL/JSON input: force every line
+through the documents adapter (loud `CtfError` on lines that don't fit the shape) even if
+detection would otherwise pick something else. It has no effect on a directory target — a
+directory is always documents, and `--from` may not be combined with one at all.
+
+**Conflict note:** because a directory document's id is its filename and its hash covers
+content, editing `docs/a.md` and re-serving hits the ordinary content-conflict path (§ "content
+differs from the stored copy") — the same as editing a JSONL line and re-importing under the
+same explicit `id`. This is content-immutability working as designed (existing annotations
+reference the stored copy), but it surprises people who expect "just re-serve after editing" to
+silently pick up the change. `--on-conflict skip` keeps the stored version instead of failing.
 
 ## 5. Import error UX (normative — this is an adoption feature)
 
@@ -75,7 +127,7 @@ Every rejected line reports the location, the rule, and a **shown-fixed example*
 
 ```
 traces.jsonl:47 — message[2] has role "function", which is not a valid role.
-Valid roles: system, user, assistant, tool, document.
+Valid roles: system, user, assistant, tool.
 It looks like an OpenAI legacy function message. Fixed, it would be:
 
   {"role": "tool", "tool_call_id": "call_abc", "content": "{...}"}
@@ -144,11 +196,26 @@ and `--from datadog spans.jsonl` are the whole story.
 ## 8. Export
 
 Specified in 04 §5 (long format + `--joined`). Restated contract: export is a pure db
-operation, columns are stable API, and multi-select CSV cells are JSON-array strings. Add
-one file: `docs/pandas.md` in the repo showing the three-line load:
+operation, columns are stable API, and multi-select CSV cells are JSON-array strings. A
+trace-level joined row for a document trace emits `content` + `content_type` instead of
+reconstructing `messages` from turns (there are none); a pandas user just reads whichever
+column is non-null for a given row. Add one file: `docs/pandas.md` in the repo showing the
+three-line load:
 
 ```python
 import pandas as pd
 df = pd.read_json("empathy-annotations.jsonl", lines=True)
 df.groupby("task")["values"].apply(lambda v: (pd.json_normalize(v)["verdict"] == "pass").mean())
 ```
+
+## 9. Suggest and documents
+
+`tracelabel suggest` builds its transcript context from turns for a conversation trace, and
+from the document body for a document trace (no turns to render) — the prompt names the target
+"The document below" instead of a turn number or "the entire conversation." See 08.
+
+## 10. Future work
+
+Progress is reported in the task's native unit — "turns" or "traces" (02 §7). A project made
+entirely of documents technically reports "N/M traces," which reads oddly for a folder of
+files; a "documents" unit is deferred rather than adding a third unit for one input shape.

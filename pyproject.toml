@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tracelabel"
 version = "0.1.0"
-description = "Local-first, zero-config labeling for agent traces — keyboard-fast, no accounts, no server."
+description = "Local-first, zero-config labeling — keyboard-fast, no accounts, no server."
 requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = [

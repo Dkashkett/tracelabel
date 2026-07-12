@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from tracelabel.ctf.content import content_type_of, detect_content_type, serialize_content
-from tracelabel.ctf.hashing import derive_trace_id
+from tracelabel.ctf.hashing import derive_document_id, derive_trace_id
+from tracelabel.ctf.models import DocumentIn
 from tracelabel.ctf.validation import CtfError, CtfValidator
 
 _validator = CtfValidator()
@@ -90,9 +91,12 @@ def test_accept_empty_content_with_tool_calls():
 # --- CTF-06 ------------------------------------------------------------------
 
 
-def test_reject_document_in_multi_message_trace():
-    with pytest.raises(CtfError):
-        _validate("reject_document_in_multi_message_trace.jsonl")
+def test_reject_document_role():
+    # "document" was removed from the message Role enum; documents are now their
+    # own top-level shape (DocumentIn), never a message inside `messages`.
+    with pytest.raises(CtfError) as excinfo:
+        _validate("reject_document_role.jsonl")
+    assert "not a valid role" in str(excinfo.value)
 
 
 # --- CTF-07 ------------------------------------------------------------------
@@ -193,3 +197,50 @@ def test_provided_id_verbatim():
     obj = _line("valid.jsonl", 0)
     trace = validate_ctf_line(obj, "valid.jsonl", 1)
     assert trace.id == "conv_1"
+
+
+# --- CTF-14 (DocumentIn) ------------------------------------------------------
+
+
+def test_document_dispatches_to_document_in():
+    obj = _line("valid.jsonl", 1)  # page_17: {"content": ..., "content_type": "html"}
+    doc = validate_ctf_line(obj, "valid.jsonl", 2)
+    assert isinstance(doc, DocumentIn)
+    assert doc.id == "page_17"
+    assert doc.content_type == "html"
+    assert doc.content.startswith("<html>")
+
+
+def test_document_content_type_optional():
+    doc = validate_ctf_line({"content": "plain text"}, "x", 1)
+    assert isinstance(doc, DocumentIn)
+    assert doc.content_type is None
+
+
+def test_reject_document_bad_content_type():
+    with pytest.raises(CtfError) as excinfo:
+        validate_ctf_line({"content": "hi", "content_type": "yaml"}, "x", 1)
+    assert "content_type" in str(excinfo.value)
+
+
+def test_reject_document_non_string_content():
+    with pytest.raises(CtfError) as excinfo:
+        validate_ctf_line({"content": 123}, "x", 1)
+    assert "content is not a string" in str(excinfo.value)
+
+
+def test_document_unknown_keys_folded_into_raw():
+    folded, warnings = fold_unknown_keys({"content": "hi", "weird": 1})
+    assert folded["raw"] == {"weird": 1}
+    assert "weird" not in folded
+    assert any("weird" in w for w in warnings)
+    validate_ctf_line(folded, "x", 1)
+
+
+def test_derive_document_id():
+    did = derive_document_id("hello world")
+    assert did.startswith("d_")
+    assert len(did) == 2 + 32
+    # deterministic on content alone
+    assert derive_document_id("hello world") == did
+    assert derive_document_id("different") != did

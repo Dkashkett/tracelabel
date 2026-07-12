@@ -33,12 +33,19 @@ def load_config(path: Path) -> RawConfig:
 
 
 def raw_config_for_target(target: Path) -> RawConfig:
+    if target.is_dir():
+        return RawConfig(data=target.resolve())
     suffix = target.suffix.lower()
     if suffix in (".yaml", ".yml"):
         return load_config(target)
     if suffix in (".jsonl", ".json"):
         return RawConfig(data=target.resolve())
+    if suffix in (".md", ".markdown", ".txt", ".text", ".html", ".htm"):
+        raise UserError(
+            f"{target}: a single document file is not a supported target. "
+            "Pass a .jsonl of documents or a directory of files."
+        )
     raise UserError(
         f"{target}: unsupported target type '{suffix}'. "
-        "Pass a config (.yaml/.yml) or a data file (.jsonl/.json)."
+        "Pass a config (.yaml/.yml), a data file (.jsonl/.json), or a directory of documents."
     )

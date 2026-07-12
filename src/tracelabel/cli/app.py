@@ -66,7 +66,8 @@ def serve(
         yes=yes,
     )
     config = ConfigResolver().resolve(raw_config_for_target(path), cli)
-    ServeCommand().execute(config, path.parent, db, port, no_browser, yes)
+    project_dir = path if path.is_dir() else path.parent
+    ServeCommand().execute(config, project_dir, db, port, no_browser, yes)
 
 
 @app.command(name="import")

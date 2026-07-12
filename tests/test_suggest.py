@@ -60,7 +60,7 @@ TRACE_CONV = {
         {"role": "assistant", "content": "done"},
     ],
 }
-TRACE_DOC = {"id": "t_doc", "messages": [{"role": "document", "content": "a document"}]}
+TRACE_DOC = {"id": "t_doc", "content": "a document", "content_type": "text"}
 
 FIELDS = [
     {
@@ -79,7 +79,7 @@ def _cfg(tmp_path, *, level="turn", with_llm=True, fields=None):
         name="task",
         level=level,
         fields=fields if fields is not None else FIELDS,
-        label_roles=["assistant", "document"],
+        label_roles=["assistant"],
         shuffle=False,
         annotator="alice",
         schema_hash="sh_test",
@@ -92,7 +92,7 @@ def _cfg(tmp_path, *, level="turn", with_llm=True, fields=None):
 def _setup(tmp_path, **cfg_kwargs):
     conn = Database(default_db_path(tmp_path))
     conn.traces.import_trace(TRACE_CONV, "loose")
-    conn.traces.import_trace(TRACE_DOC, "loose")
+    conn.traces.import_document(TRACE_DOC, "loose")
     cfg = _cfg(tmp_path, **cfg_kwargs)
     conn.tasks.open(cfg, assume_yes=True)
     return conn, cfg
@@ -112,6 +112,11 @@ class FakeLiteLLM:
     async def acompletion(self, **kwargs):
         self.calls.append(kwargs)
         return self._handler(kwargs, self.calls)
+
+
+class FakeSuggestionClient:
+    async def complete(self, _config, _messages):
+        raise AssertionError("this test does not make suggestion requests")
 
 
 def _install(monkeypatch, handler) -> FakeLiteLLM:
@@ -166,11 +171,12 @@ def test_authentication_failure_surfaces_and_is_never_stored(tmp_path, monkeypat
 
 def test_targets_idempotent_and_overwrite(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
-    # Pre-annotate one target: it must be excluded as already addressed.
+    # Pre-annotate one target: it must be excluded as already addressed. (The
+    # document trace has zero turns, so it contributes no turn-level targets here.)
     conn.annotations.upsert_annotation(
         task=cfg.name,
         target_type="turn",
-        target_id="t_doc#0",
+        target_id="t_conv#1",
         status="labeled",
         values={"verdict": "pass"},
         annotator=cfg.annotator,
@@ -179,22 +185,22 @@ def test_targets_idempotent_and_overwrite(tmp_path, monkeypatch):
     )
     fake = _install(monkeypatch, _always('{"verdict": "pass"}'))
 
-    # First run: two unaddressed turns (t_conv#1, t_conv#3).
+    # First run: one unaddressed turn (t_conv#3).
     s1 = run_suggest(cfg, conn, limit=None, overwrite=False)
-    assert (s1.ok, s1.failed, s1.skipped_existing) == (2, 0, 0)
-    assert len(fake.calls) == 2
+    assert (s1.ok, s1.failed, s1.skipped_existing) == (1, 0, 0)
+    assert len(fake.calls) == 1
 
-    # Re-run without overwrite: both holes are filled → nothing to do.
+    # Re-run without overwrite: the hole is filled → nothing to do.
     fake.calls.clear()
     s2 = run_suggest(cfg, conn, limit=None, overwrite=False)
-    assert (s2.ok, s2.failed, s2.skipped_existing) == (0, 0, 2)
+    assert (s2.ok, s2.failed, s2.skipped_existing) == (0, 0, 1)
     assert fake.calls == []
 
     # Overwrite regenerates everything unaddressed.
     fake.calls.clear()
     s3 = run_suggest(cfg, conn, limit=None, overwrite=True)
-    assert (s3.ok, s3.failed, s3.skipped_existing) == (2, 0, 0)
-    assert len(fake.calls) == 2
+    assert (s3.ok, s3.failed, s3.skipped_existing) == (1, 0, 0)
+    assert len(fake.calls) == 1
 
 
 # ── SUG-04 / SUG-05: validation gate ─────────────────────────────────────────
@@ -245,6 +251,21 @@ def test_build_prompt_contains_fields_and_target(tmp_path):
     assert "Turn #1 (marked >>> above)" in prompt
 
 
+# ── SUG-06b: document context + prompt (trace-level, zero turns) ────────────
+
+
+def test_document_context_and_prompt(tmp_path):
+    conn, cfg = _setup(tmp_path, level="trace")
+    service = SuggestionService(cfg, conn.traces, conn.annotations, FakeSuggestionClient())
+    context = service.load_context("t_doc")
+    assert context.turns == []
+    assert context.document == "a document"
+
+    prompt = build_prompt(cfg, context)
+    assert "The document below" in prompt
+    assert "a document" in prompt
+
+
 # ── SUG-07: transcript truncation ────────────────────────────────────────────
 
 
@@ -283,7 +304,7 @@ def test_per_item_failure_continues(tmp_path, monkeypatch):
 
     _install(monkeypatch, handler)
     summary = run_suggest(cfg, conn, limit=None, overwrite=False, concurrency=1)
-    assert (summary.ok, summary.failed) == (2, 1)  # doc#0 + conv#1 ok, conv#3 fails
+    assert (summary.ok, summary.failed) == (1, 1)  # conv#1 ok, conv#3 fails
 
 
 # ── SUG-09: provenance invariant #2 ──────────────────────────────────────────
@@ -294,4 +315,4 @@ def test_no_annotation_rows_created(tmp_path, monkeypatch):
     _install(monkeypatch, _always('{"verdict": "pass"}'))
     run_suggest(cfg, conn, limit=None, overwrite=False)
     assert conn.connection.execute("SELECT count(*) FROM annotations").fetchone()[0] == 0
-    assert conn.connection.execute("SELECT count(*) FROM suggestions").fetchone()[0] == 3
+    assert conn.connection.execute("SELECT count(*) FROM suggestions").fetchone()[0] == 2

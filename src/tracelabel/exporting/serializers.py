@@ -38,7 +38,7 @@ class CsvSerializer:
             if self._level == "turn":
                 columns.extend(("role", "content", "content_type"))
             else:
-                columns.extend(("messages", "trace_metadata"))
+                columns.extend(("messages", "content", "content_type", "trace_metadata"))
         return columns
 
     def write(self, rows: Sequence[ExportRow], stream: TextIO) -> None:
@@ -59,7 +59,11 @@ class CsvSerializer:
                 output["content"] = row["content"]
                 output["content_type"] = row["content_type"]
             else:
-                output["messages"] = json.dumps(row["messages"], ensure_ascii=False)
+                if "messages" in row:
+                    output["messages"] = json.dumps(row["messages"], ensure_ascii=False)
+                else:
+                    output["content"] = row["content"]
+                    output["content_type"] = row["content_type"]
                 output["trace_metadata"] = json.dumps(
                     row["trace_metadata"],
                     ensure_ascii=False,

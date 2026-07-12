@@ -5,6 +5,8 @@ import {
   initialNavState,
   navReducer,
   primarySelect,
+  queueCounts,
+  queueIsComplete,
   validateDraft,
   type NavState,
 } from "./navReducer";
@@ -55,6 +57,57 @@ describe("navReducer", () => {
   it("toggles auto-advance", () => {
     const s = navReducer(base(), { type: "TOGGLE_AUTO_ADVANCE" });
     expect(s.autoAdvance).toBe(false);
+  });
+
+  it("enters the finished screen and restores review mode at a selected trace", () => {
+    let s = navReducer(base(), { type: "SHOW_FINISHED" });
+    expect(s.workflow).toBe("finished");
+    s = navReducer(s, { type: "REVIEW_TRACE", idx: 3 });
+    expect(s.workflow).toBe("review");
+    expect(s.traceIdx).toBe(3);
+    expect(s.turnIdx).toBeNull();
+  });
+
+  it("keeps the active turn when reviewing the trace already on screen", () => {
+    let s = navReducer(base(), { type: "SET_ACTIVE_TURN", idx: 4 });
+    s = navReducer(s, { type: "SHOW_FINISHED" });
+    s = navReducer(s, { type: "REVIEW_TRACE", idx: 0 });
+    expect(s.turnIdx).toBe(4);
+  });
+});
+
+describe("queue completion", () => {
+  const entry = (overrides: Partial<{ n_targets: number; n_labeled: number; n_skipped: number }>) => ({
+    trace_id: "trace",
+    position: 0,
+    n_targets: 2,
+    n_labeled: 0,
+    n_skipped: 0,
+    ...overrides,
+  });
+
+  it("requires every queue target to be labeled or skipped", () => {
+    expect(
+      queueIsComplete([
+        entry({ n_labeled: 1, n_skipped: 1 }),
+        { ...entry({ n_targets: 1, n_labeled: 0 }), trace_id: "unfinished", position: 1 },
+      ]),
+    ).toBe(false);
+    expect(
+      queueIsComplete([
+        entry({ n_labeled: 1, n_skipped: 1 }),
+        { ...entry({ n_targets: 1, n_skipped: 1 }), trace_id: "done", position: 1 },
+      ]),
+    ).toBe(true);
+  });
+
+  it("totals labeled, skipped, and target counts", () => {
+    expect(
+      queueCounts([
+        entry({ n_labeled: 1, n_skipped: 1 }),
+        { ...entry({ n_targets: 3, n_labeled: 2, n_skipped: 1 }), position: 1 },
+      ]),
+    ).toEqual({ labeled: 3, skipped: 2, total: 5 });
   });
 });
 

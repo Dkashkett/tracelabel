@@ -23,6 +23,8 @@ import {
   fieldValueTruthy,
   initialNavState,
   navReducer,
+  queueCounts,
+  queueIsComplete,
   validateDraft,
   type Draft,
   type NavAction,
@@ -50,6 +52,8 @@ export interface Controller {
   savedTargetId: string | null;
   cheatOpen: boolean;
   drawerOpen: boolean;
+  isFinished: boolean;
+  completionCounts: { labeled: number; skipped: number; total: number };
   dispatch: React.Dispatch<NavAction>;
   setCheatOpen: (open: boolean) => void;
   setDrawerOpen: (open: boolean) => void;
@@ -111,7 +115,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [cheatOpen, setCheatOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [savedTargetId, setSavedTargetId] = useState<string | null>(null);
 
   const session = sessionQ.data;
@@ -119,6 +123,10 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const currentTraceId = queue?.[state.traceIdx]?.trace_id;
   const traceQ = useTrace(currentTraceId);
   const trace = traceQ.data;
+  const datasetComplete = !!queue && queueIsComplete(queue);
+  const isFinished =
+    state.workflow === "finished" ||
+    (state.workflow === "labeling" && datasetComplete);
 
   const level = session?.level ?? "turn";
   const labelableTurns = useMemo(
@@ -167,8 +175,17 @@ export function NavProvider({ children }: { children: ReactNode }) {
     setAutoAdvance(state.autoAdvance);
   }, [state.autoAdvance]);
 
+  // Derive completion from persisted queue counts. Review mode intentionally suppresses this so
+  // choosing a trace from the finished screen restores an editable workspace.
+  useEffect(() => {
+    if (state.workflow === "labeling" && datasetComplete) {
+      setDrawerOpen(false);
+      dispatch({ type: "SHOW_FINISHED" });
+    }
+  }, [datasetComplete, state.workflow]);
+
   const fetchTrace = (id: string) =>
-    qc.ensureQueryData({ queryKey: qk.trace(id), queryFn: () => api.getTrace(id) });
+    qc.fetchQuery({ queryKey: qk.trace(id), queryFn: () => api.getTrace(id) });
 
   const invalidateAfterWrite = (traceId: string) => {
     void qc.invalidateQueries({ queryKey: qk.trace(traceId) });
@@ -178,30 +195,48 @@ export function NavProvider({ children }: { children: ReactNode }) {
     if (next) void qc.prefetchQuery({ queryKey: qk.trace(next), queryFn: () => api.getTrace(next) });
   };
 
-  // Next unaddressed target, crossing trace boundaries (06 §2.2).
+  // Next unaddressed target in queue order, wrapping once at the physical end (06 §2.2).
   async function advance(committedId?: string) {
     if (!session || !queue || !trace) return;
-    if (session.level === "turn") {
-      const labelable = trace.turns.filter((t) => t.labelable);
-      const from = state.turnIdx == null ? -1 : labelable.findIndex((t) => t.idx === state.turnIdx);
-      for (let i = from + 1; i < labelable.length; i++) {
-        if (!isAddressed(trace, labelable[i].id, committedId)) {
-          dispatch({ type: "SET_ACTIVE_TURN", idx: labelable[i].idx });
-          return;
-        }
-      }
+
+    const activate = (traceIdx: number, target: Target) => {
+      if (traceIdx !== state.traceIdx) dispatch({ type: "SET_TRACE", idx: traceIdx });
+      dispatch({ type: "SET_ACTIVE_TURN", idx: target.turnIdx });
+    };
+    const firstUnaddressed = (td: TraceDetail, candidates: Target[]) =>
+      candidates.find((target) => !isAddressed(td, target.id, committedId));
+
+    const currentTargets = targetsOf(trace, session.level);
+    const currentTargetIdx = currentTargets.findIndex((target) => target.id === activeTarget?.id);
+    const afterCurrent = currentTargets.slice(Math.max(0, currentTargetIdx + 1));
+    const nextHere = firstUnaddressed(trace, afterCurrent);
+    if (nextHere) {
+      activate(state.traceIdx, nextHere);
+      return;
     }
+
+    const scanTrace = async (traceIdx: number): Promise<boolean> => {
+      const entry = queue[traceIdx];
+      if (entry.n_labeled + entry.n_skipped >= entry.n_targets) return false;
+      const td = await fetchTrace(entry.trace_id);
+      const next = firstUnaddressed(td, targetsOf(td, session.level));
+      if (!next) return false;
+      activate(traceIdx, next);
+      return true;
+    };
+
     for (let j = state.traceIdx + 1; j < queue.length; j++) {
-      const td = await fetchTrace(queue[j].trace_id);
-      for (const tg of targetsOf(td, session.level)) {
-        if (!isAddressed(td, tg.id, committedId)) {
-          dispatch({ type: "SET_TRACE", idx: j });
-          dispatch({ type: "SET_ACTIVE_TURN", idx: tg.turnIdx });
-          return;
-        }
-      }
+      if (await scanTrace(j)) return;
     }
-    // nothing unaddressed ahead — stay put (the queue is complete or only re-edits remain)
+    for (let j = 0; j < state.traceIdx; j++) {
+      if (await scanTrace(j)) return;
+    }
+
+    // The wrap ends with targets earlier in the current trace.
+    const beforeCurrent = currentTargets.slice(0, Math.max(0, currentTargetIdx));
+    const wrappedHere = firstUnaddressed(trace, beforeCurrent);
+    if (wrappedHere) activate(state.traceIdx, wrappedHere);
+    // No target found: stay put until a successful write refreshes queue completion counts.
   }
 
   const focusTurnByIdx = (idx: number) => dispatch({ type: "SET_ACTIVE_TURN", idx });
@@ -215,8 +250,12 @@ export function NavProvider({ children }: { children: ReactNode }) {
   };
 
   const goToTrace = (idx: number) => {
-    if (!queue) return;
+    if (!queue?.length) return;
     const clamped = Math.max(0, Math.min(queue.length - 1, idx));
+    if (isFinished) {
+      dispatch({ type: "REVIEW_TRACE", idx: clamped });
+      return;
+    }
     if (clamped !== state.traceIdx) dispatch({ type: "SET_TRACE", idx: clamped });
   };
 
@@ -330,6 +369,8 @@ export function NavProvider({ children }: { children: ReactNode }) {
     savedTargetId,
     cheatOpen,
     drawerOpen,
+    isFinished,
+    completionCounts: queueCounts(queue),
     dispatch,
     setCheatOpen,
     setDrawerOpen,

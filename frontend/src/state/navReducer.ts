@@ -1,6 +1,7 @@
-import type { ResolvedField } from "@/api/types";
+import type { QueueEntry, ResolvedField } from "@/api/types";
 
 export type Mode = "NAV" | "FIELD";
+export type Workflow = "labeling" | "finished" | "review";
 export type Draft = Record<string, string | string[]>;
 
 // Exactly the shape in docs/design/06-frontend.md §6.
@@ -12,6 +13,7 @@ export interface NavState {
   prefillModel: string | null;
   autoAdvance: boolean;
   peek: boolean;
+  workflow: Workflow;
 }
 
 export type NavAction =
@@ -23,7 +25,9 @@ export type NavAction =
   | { type: "TOGGLE_MULTI"; name: string; option: string }
   | { type: "CLEAR_DRAFT" }
   | { type: "TOGGLE_AUTO_ADVANCE" }
-  | { type: "SET_PEEK"; peek: boolean };
+  | { type: "SET_PEEK"; peek: boolean }
+  | { type: "SHOW_FINISHED" }
+  | { type: "REVIEW_TRACE"; idx: number };
 
 export function initialNavState(autoAdvance: boolean): NavState {
   return {
@@ -34,6 +38,7 @@ export function initialNavState(autoAdvance: boolean): NavState {
     prefillModel: null,
     autoAdvance,
     peek: false,
+    workflow: "labeling",
   };
 }
 
@@ -67,7 +72,37 @@ export function navReducer(state: NavState, action: NavAction): NavState {
       return { ...state, autoAdvance: !state.autoAdvance };
     case "SET_PEEK":
       return { ...state, peek: action.peek };
+    case "SHOW_FINISHED":
+      return { ...state, mode: "NAV", peek: false, workflow: "finished" };
+    case "REVIEW_TRACE":
+      return {
+        ...state,
+        traceIdx: action.idx,
+        turnIdx: action.idx === state.traceIdx ? state.turnIdx : null,
+        mode: "NAV",
+        peek: false,
+        workflow: "review",
+      };
   }
+}
+
+export function queueIsComplete(queue: QueueEntry[]): boolean {
+  return queue.every((entry) => entry.n_labeled + entry.n_skipped >= entry.n_targets);
+}
+
+export function queueCounts(queue: QueueEntry[]): {
+  labeled: number;
+  skipped: number;
+  total: number;
+} {
+  return queue.reduce(
+    (counts, entry) => ({
+      labeled: counts.labeled + entry.n_labeled,
+      skipped: counts.skipped + entry.n_skipped,
+      total: counts.total + entry.n_targets,
+    }),
+    { labeled: 0, skipped: 0, total: 0 },
+  );
 }
 
 export function isSelect(f: ResolvedField): boolean {

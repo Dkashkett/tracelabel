@@ -1,31 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/api/types";
+import type { ToolInteraction } from "@/presentation/turnGroups";
 import { ToolCallCard } from "./ToolCallCard";
-import { HtmlFrame } from "./renderers/HtmlFrame";
-import { JsonTree } from "./renderers/JsonTree";
-import { PartsContent } from "./renderers/PartsContent";
-import { TextContent } from "./renderers/TextContent";
+import { ContentByType } from "./renderers/ContentByType";
 
 const roleBorder: Record<Turn["role"], string> = {
   user: "border-l-blue-500",
   assistant: "border-l-green-500",
   tool: "border-l-amber-500",
   system: "border-l-slate-400",
-  document: "border-l-purple-500",
 };
 
 function Content({ turn }: { turn: Turn }) {
-  switch (turn.content_type) {
-    case "text":
-      return <TextContent content={turn.content} />;
-    case "json":
-      return <JsonTree content={turn.content} />;
-    case "html":
-      return <HtmlFrame content={turn.content} />;
-    case "parts":
-      return <PartsContent content={turn.content} />;
-  }
+  return <ContentByType content={turn.content} contentType={turn.content_type} />;
 }
 
 export function TurnCard({
@@ -33,11 +21,15 @@ export function TurnCard({
   active,
   dimmed,
   onSelect,
+  toolInteractions = [],
+  onSizeChange,
 }: {
   turn: Turn;
   active: boolean;
   dimmed: boolean;
   onSelect: () => void;
+  toolInteractions?: ToolInteraction[];
+  onSizeChange?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
@@ -74,8 +66,15 @@ export function TurnCard({
         style={{ maxHeight: expanded ? "none" : "40vh" }}
       >
         <Content turn={turn} />
-        {turn.tool_calls?.map((call, i) => <ToolCallCard key={call.id ?? i} call={call} />)}
       </div>
+
+      {toolInteractions.map((interaction, i) => (
+        <ToolCallCard
+          key={interaction.call.id ?? i}
+          interaction={interaction}
+          onExpandedChange={onSizeChange}
+        />
+      ))}
 
       {clamped && !expanded && (
         <button
@@ -83,6 +82,7 @@ export function TurnCard({
           onClick={(e) => {
             e.stopPropagation();
             setExpanded(true);
+            onSizeChange?.();
           }}
           className="mt-1 text-xs font-medium text-sky-600 hover:underline"
         >
@@ -95,6 +95,7 @@ export function TurnCard({
           onClick={(e) => {
             e.stopPropagation();
             setExpanded(false);
+            onSizeChange?.();
           }}
           className="mt-1 text-xs font-medium text-sky-600 hover:underline"
         >

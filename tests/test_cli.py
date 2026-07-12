@@ -220,3 +220,39 @@ def test_no_host_flag_and_loopback_bind(tmp_path, _no_serve):
     assert r.exit_code == 0
     assert _no_serve["host"] == "127.0.0.1"
     assert "browser" not in _no_serve  # --no-browser suppressed the open
+
+
+# ── CLI-09: directory targets (documents) ─────────────────────────────────────
+
+
+def test_import_directory_of_documents(tmp_path):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "a.md").write_text("# Title\n", encoding="utf-8")
+    (docs_dir / "b.txt").write_text("plain\n", encoding="utf-8")
+
+    r = runner.invoke(cli.app, ["import", str(docs_dir)])
+    assert r.exit_code == 0
+    assert "2 inserted" in r.stdout
+    # db is created inside the target directory, not the cwd
+    assert default_db_path(docs_dir).exists()
+
+
+def test_serve_directory_of_documents(tmp_path, _no_serve):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "a.md").write_text("# Title\n", encoding="utf-8")
+
+    r = runner.invoke(cli.app, ["serve", str(docs_dir), "--no-browser", "--yes"])
+    assert r.exit_code == 0
+    assert default_db_path(docs_dir).exists()
+
+
+def test_single_document_file_rejected_by_cli(tmp_path, monkeypatch, capsys):
+    md = tmp_path / "notes.md"
+    md.write_text("# hi", encoding="utf-8")
+    code = _run_cli(monkeypatch, ["serve", str(md), "--no-browser", "--yes"])
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "not a supported target" in captured.err
+    assert "directory" in captured.err

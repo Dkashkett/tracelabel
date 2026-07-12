@@ -1,0 +1,3 @@
+{"id":"e2e_001","messages":[{"role":"system","content":"You are a support assistant."},{"role":"user","content":"Where is order 42?"},{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup_order","arguments":"{\"order_id\":\"42\"}"}}]},{"role":"tool","tool_call_id":"call_1","name":"lookup_order","content":"{\"status\":\"shipped\",\"eta\":\"tomorrow\"}"},{"role":"assistant","content":"Order 42 has shipped and should arrive tomorrow."}]}
+{"id":"e2e_002","messages":[{"role":"user","content":"What is 2 + 2?"},{"role":"assistant","content":"4"}]}
+{"id":"e2e_003","messages":[{"role":"user","content":"Name a primary color."},{"role":"assistant","content":"Blue."}]}

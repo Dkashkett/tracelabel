@@ -14,6 +14,7 @@ class TargetContext:
     turns: list[sqlite3.Row]
     target_id: str
     target_index: int | None
+    document: str | None = None
 
 
 def render_fields_spec(fields: list[dict[str, Any]]) -> str:
@@ -87,16 +88,20 @@ class PromptBuilder:
         self._transcript_budget = transcript_budget
 
     def build(self, config: ResolvedTaskConfig, context: TargetContext) -> str:
-        target = (
-            f"Turn #{context.target_index} (marked >>> above)"
-            if config.level == "turn"
-            else "The entire conversation"
-        )
-        transcript = render_transcript(
-            context.turns,
-            context.target_index,
-            self._transcript_budget,
-        )
+        if context.document is not None:
+            target = "The document below"
+            transcript = context.document
+        else:
+            target = (
+                f"Turn #{context.target_index} (marked >>> above)"
+                if config.level == "turn"
+                else "The entire conversation"
+            )
+            transcript = render_transcript(
+                context.turns,
+                context.target_index,
+                self._transcript_budget,
+            )
         return f"""You are assisting a human data labeler. Judge the target below and respond
 with ONLY a JSON object — no prose, no markdown fences.
 

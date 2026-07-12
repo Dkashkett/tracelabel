@@ -34,13 +34,18 @@ export interface QueueEntry {
 export interface TraceDetail {
   trace: { id: string; source?: string; metadata: object };
   turns: Turn[]; // ALL turns incl. non-labelable (context), ordered by idx
+  document?: DocumentDetail; // set iff the trace is a document (content non-null); turns is [] then
   annotations: Record<string, AnnotationOut>; // keyed by target_id, this task+annotator only
   suggestions: Record<string, SuggestionOut>; // keyed by target_id
+}
+export interface DocumentDetail {
+  content: string;
+  content_type: "text" | "json" | "html" | "markdown";
 }
 export interface Turn {
   id: string; // "{trace_id}#{idx}"
   idx: number;
-  role: "system" | "user" | "assistant" | "tool" | "document";
+  role: "system" | "user" | "assistant" | "tool";
   content: string; // verbatim; if content_type=="parts", JSON-serialized parts
   content_type: "text" | "json" | "html" | "parts";
   tool_calls?: ToolCall[];
@@ -51,8 +56,11 @@ export interface Turn {
 }
 export interface ToolCall {
   id?: string;
-  name: string;
-  arguments: string; // raw string, stored verbatim
+  type?: string;
+  function?: { name: string; arguments: string };
+  // The flattened shape remains accepted for mock/legacy API data.
+  name?: string;
+  arguments?: string; // raw string, stored verbatim
 }
 
 // PUT /api/annotations

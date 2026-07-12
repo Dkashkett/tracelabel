@@ -4,10 +4,12 @@ from typing import Any, NamedTuple
 from tracelabel.errors import UserError
 
 from .hashing import canonical_json
-from .models import Json, TraceIn
+from .models import DocumentIn, Json, TraceIn
 
-VALID_ROLES = ("system", "user", "assistant", "tool", "document")
+VALID_ROLES = ("system", "user", "assistant", "tool")
+DOCUMENT_CONTENT_TYPES = ("text", "json", "html", "markdown")
 TRACE_KEYS = {"format_version", "id", "source", "metadata", "messages", "raw"}
+DOCUMENT_KEYS = {"format_version", "id", "source", "metadata", "content", "content_type", "raw"}
 MESSAGE_KEYS = {"role", "content", "tool_calls", "tool_call_id", "name", "metadata", "raw"}
 
 GENERIC_FIXED_EXAMPLE = (
@@ -70,6 +72,9 @@ KNOWN_MISTAKES = (
 
 class CtfValidator:
     def fold_unknown_keys(self, trace: Json) -> tuple[Json, list[str]]:
+        if "messages" not in trace and "content" in trace:
+            return self._fold_document(trace)
+
         warnings: list[str] = []
         folded: Json = {}
         extra_raw: Json = {}
@@ -92,7 +97,23 @@ class CtfValidator:
             folded["raw"] = {**extra_raw, **existing} if isinstance(existing, dict) else extra_raw
         return folded, warnings
 
-    def validate_line(self, value: object, file: str, line_number: int) -> TraceIn:
+    @staticmethod
+    def _fold_document(document: Json) -> tuple[Json, list[str]]:
+        warnings: list[str] = []
+        folded: Json = {}
+        extra_raw: Json = {}
+        for key, value in document.items():
+            if key in DOCUMENT_KEYS:
+                folded[key] = value
+            else:
+                extra_raw[key] = value
+                warnings.append(f'unknown document key "{key}" moved to raw')
+        if extra_raw:
+            existing = folded.get("raw")
+            folded["raw"] = {**extra_raw, **existing} if isinstance(existing, dict) else extra_raw
+        return folded, warnings
+
+    def validate_line(self, value: object, file: str, line_number: int) -> TraceIn | DocumentIn:
         def fail(rule: str, detail: str, fixed_from: Any) -> CtfError:
             return CtfError(
                 file,
@@ -123,6 +144,9 @@ class CtfValidator:
                 f"format_version is {format_version!r}, which is not 1.",
                 value,
             )
+
+        if "messages" not in value and "content" in value:
+            return self._validate_document(value, fail)
 
         messages = value.get("messages")
         if "messages" not in value:
@@ -190,19 +214,39 @@ class CtfValidator:
                         message,
                     )
 
-        if any(message.get("role") == "document" for message in messages) and len(messages) > 1:
-            raise fail(
-                "A document may only appear as the single message of a trace.",
-                "a document role appears in a multi-message trace.",
-                value,
-            )
-
         try:
             return TraceIn.model_validate(value)
         except ValueError as error:
             raise fail(
                 "messages must follow the CTF v1 shape.",
                 f"trace does not match the CTF v1 schema: {error}",
+                value,
+            ) from error
+
+    @staticmethod
+    def _validate_document(value: Json, fail: Callable[[str, str, Any], CtfError]) -> DocumentIn:
+        content = value.get("content")
+        if not isinstance(content, str):
+            raise fail(
+                'A document\'s "content" must be a string.',
+                "content is not a string.",
+                value,
+            )
+
+        content_type = value.get("content_type")
+        if content_type is not None and content_type not in DOCUMENT_CONTENT_TYPES:
+            raise fail(
+                f"Valid content types: {', '.join(DOCUMENT_CONTENT_TYPES)}.",
+                f"content_type is {content_type!r}, which is not valid.",
+                value,
+            )
+
+        try:
+            return DocumentIn.model_validate(value)
+        except ValueError as error:
+            raise fail(
+                "content must follow the CTF v1 document shape.",
+                f"document does not match the CTF v1 schema: {error}",
                 value,
             ) from error
 

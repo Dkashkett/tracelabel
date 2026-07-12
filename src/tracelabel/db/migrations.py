@@ -10,14 +10,18 @@ CREATE TABLE traces (
     source        TEXT,
     metadata      TEXT NOT NULL DEFAULT '{}',
     raw           TEXT,
-    imported_at   TEXT NOT NULL
+    imported_at   TEXT NOT NULL,
+    content       TEXT,
+    content_type  TEXT CHECK (
+        content_type IS NULL OR content_type IN ('text','json','html','markdown')
+    )
 );
 
 CREATE TABLE turns (
     id            TEXT PRIMARY KEY,
     trace_id      TEXT NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
     idx           INTEGER NOT NULL,
-    role          TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool','document')),
+    role          TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool')),
     content       TEXT NOT NULL,
     content_type  TEXT NOT NULL CHECK (content_type IN ('text','json','html','parts')),
     tool_calls    TEXT,

@@ -6,9 +6,9 @@ from tracelabel.ctf.validation import CtfError, CtfValidator
 from tracelabel.db.traces import ConflictPolicy, ImportResult, TraceRepository
 from tracelabel.errors import UserError
 
-from .adapters.base import Adapter, AdapterRegistry
+from .adapters.base import AdapterRegistry
 from .adapters.loose import LooseAdapter
-from .parsing import apply_adapter, iter_documents, parse_values
+from .parsing import iter_target
 
 
 @dataclass
@@ -41,21 +41,23 @@ class ImportService:
         as_documents: bool = False,
     ) -> ImportSummary:
         summary = ImportSummary()
-        file = str(path)
-        adapter: Adapter | None
-        if as_documents:
-            adapter = None
-            stream = iter_documents(path)
-            source_name = "documents"
-        else:
-            values = parse_values(path)
-            adapter = self._registry.select(from_, [value for _, value in values[:5]])
-            stream = apply_adapter(adapter, values, file)
-            source_name = adapter.name
+        plan = iter_target(path, self._registry, from_=from_, as_documents=as_documents)
 
         seen_ids: dict[str, int] = {}
         warned: set[str] = set()
-        for line_number, trace in stream:
+        items = iter(plan.items)
+        while True:
+            try:
+                file, line_number, trace = next(items)
+            except StopIteration:
+                break
+            except CtfError as error:
+                if skip_invalid:
+                    summary.invalid.append(str(error))
+                    continue
+                raise UserError(
+                    str(error) + "Run with --skip-invalid to import the other lines anyway.\n"
+                ) from error
             try:
                 folded, unknown_warnings = self._validator.fold_unknown_keys(trace)
                 for warning in unknown_warnings:
@@ -64,7 +66,10 @@ class ImportService:
                         warnings.warn(warning, stacklevel=2)
                 self._validator.validate_line(folded, file, line_number)
                 self._check_duplicate_id(folded.get("id"), seen_ids, file, line_number)
-                result = self._traces.import_trace(folded, source_name, on_conflict)
+                if "content" in folded and "messages" not in folded:
+                    result = self._traces.import_document(folded, plan.source, on_conflict)
+                else:
+                    result = self._traces.import_trace(folded, plan.source, on_conflict)
                 self._tally(summary, result)
             except CtfError as error:
                 if skip_invalid:
@@ -73,8 +78,9 @@ class ImportService:
                 raise UserError(
                     str(error) + "Run with --skip-invalid to import the other lines anyway.\n"
                 ) from error
-        if isinstance(adapter, LooseAdapter):
-            summary.notes = adapter.notes()
+        summary.notes = list(plan.notes)
+        if isinstance(plan.adapter, LooseAdapter):
+            summary.notes.extend(plan.adapter.notes())
         return summary
 
     @staticmethod

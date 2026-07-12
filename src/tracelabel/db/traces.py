@@ -3,7 +3,13 @@ import warnings
 from typing import Any, Literal, cast
 
 from tracelabel.ctf.content import content_type_of, serialize_content
-from tracelabel.ctf.hashing import canonical_json, content_hash, derive_trace_id
+from tracelabel.ctf.hashing import (
+    canonical_json,
+    content_hash,
+    derive_document_id,
+    derive_trace_id,
+    document_content_hash,
+)
 from tracelabel.ctf.models import Json
 from tracelabel.errors import UserError
 
@@ -46,7 +52,8 @@ class TraceRepository:
 
         with self._transaction() as connection:
             connection.execute(
-                "INSERT INTO traces VALUES (?,?,?,?,?,?)",
+                "INSERT INTO traces (id, content_hash, source, metadata, raw, imported_at) "
+                "VALUES (?,?,?,?,?,?)",
                 (
                     trace_id,
                     incoming_hash,
@@ -74,6 +81,41 @@ class TraceRepository:
                         _json_or_none(message.get("raw")),
                     ),
                 )
+        return "inserted"
+
+    def import_document(
+        self,
+        document: Json,
+        source: str,
+        on_conflict: ConflictPolicy = "fail",
+    ) -> ImportResult:
+        content = cast(str, document["content"])
+        content_type = document.get("content_type")
+        doc_id = str(document.get("id") or derive_document_id(content))
+        incoming_hash = document_content_hash(content, content_type)
+        existing = self._connection.execute(
+            "SELECT content_hash FROM traces WHERE id=?",
+            (doc_id,),
+        ).fetchone()
+        if existing is not None:
+            return self._handle_existing(doc_id, incoming_hash, existing, on_conflict)
+
+        with self._transaction() as connection:
+            connection.execute(
+                "INSERT INTO traces "
+                "(id, content_hash, source, metadata, raw, imported_at, content, content_type) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    doc_id,
+                    incoming_hash,
+                    source,
+                    canonical_json(document.get("metadata", {})),
+                    _json_or_none(document.get("raw")),
+                    self._clock(),
+                    content,
+                    content_type,
+                ),
+            )
         return "inserted"
 
     def _handle_existing(

@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 
 from tracelabel.config.models import ResolvedTaskConfig
+from tracelabel.ctf.hashing import derive_document_id
 from tracelabel.db.database import Database, default_db_path
 from tracelabel.db.locking import ProjectLock
 from tracelabel.errors import EnvError, UserError
@@ -51,6 +52,15 @@ def ctf_trace(*, id=None, messages=None):
     return obj
 
 
+def ctf_document(*, id=None, content="doc body", content_type=None):
+    obj = {"content": content}
+    if id is not None:
+        obj["id"] = id
+    if content_type is not None:
+        obj["content_type"] = content_type
+    return obj
+
+
 @pytest.fixture
 def conn(tmp_path):
     c = Database(default_db_path(tmp_path))
@@ -83,11 +93,29 @@ def test_migration_001_schema(conn):
     assert "idx_annotations_task" in indexes
     # CHECK constraints are live: an illegal role is rejected.
     conn.connection.execute(
-        "INSERT INTO traces VALUES ('t','h',NULL,'{}',NULL,'2026-01-01T00:00:00Z')"
+        "INSERT INTO traces (id, content_hash, source, metadata, raw, imported_at) "
+        "VALUES ('t','h',NULL,'{}',NULL,'2026-01-01T00:00:00Z')"
     )
     with pytest.raises(sqlite3.IntegrityError):
         conn.connection.execute(
             "INSERT INTO turns VALUES ('t#0','t',0,'bogus','x','text',NULL,NULL,NULL,'{}',NULL)"
+        )
+    # "document" was removed from the message Role enum; a turn may never carry it.
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.connection.execute(
+            "INSERT INTO turns VALUES ('t#0','t',0,'document','x','text',NULL,NULL,NULL,'{}',NULL)"
+        )
+    # content_type CHECK on traces accepts the four document content types.
+    conn.connection.execute(
+        "INSERT INTO traces (id, content_hash, source, metadata, raw, imported_at, "
+        "content, content_type) VALUES ('d','h2',NULL,'{}',NULL,'2026-01-01T00:00:00Z',"
+        "'hi','markdown')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.connection.execute(
+            "INSERT INTO traces (id, content_hash, source, metadata, raw, imported_at, "
+            "content, content_type) VALUES ('d2','h3',NULL,'{}',NULL,"
+            "'2026-01-01T00:00:00Z','hi','yaml')"
         )
 
 
@@ -158,6 +186,66 @@ def test_import_conflict_skip(conn):
         == stored_hash
     )
     assert conn.connection.execute("SELECT content FROM turns WHERE id='x#0'").fetchone()[0] == "hi"
+
+
+# ── documents (import_document) ────────────────────────────────────────────
+
+
+def test_import_document_writes_content_zero_turns(conn):
+    result = conn.traces.import_document(
+        ctf_document(id="d1", content="# Title", content_type="markdown"), "documents"
+    )
+    assert result == "inserted"
+    trace = conn.traces.get("d1")
+    assert trace["content"] == "# Title"
+    assert trace["content_type"] == "markdown"
+    assert conn.traces.get_turns("d1") == []
+
+
+def test_import_document_derives_id_from_content_when_absent(conn):
+    result = conn.traces.import_document(ctf_document(content="hello world"), "documents")
+    assert result == "inserted"
+    expected_id = derive_document_id("hello world")
+    trace = conn.traces.get(expected_id)
+    assert trace is not None
+    assert trace["content"] == "hello world"
+    assert trace["content_type"] is None
+
+
+def test_import_document_twice_skipped_duplicate(conn):
+    doc = ctf_document(id="d1", content="body", content_type="text")
+    assert conn.traces.import_document(doc, "documents") == "inserted"
+    assert conn.traces.import_document(doc, "documents") == "skipped_duplicate"
+    assert conn.connection.execute("SELECT count(*) FROM traces").fetchone()[0] == 1
+
+
+def test_import_document_edited_content_conflicts(conn):
+    conn.traces.import_document(ctf_document(id="d1", content="original"), "documents")
+    edited = ctf_document(id="d1", content="edited")
+    with pytest.raises(UserError) as ei:
+        conn.traces.import_document(edited, "documents")
+    msg = str(ei.value)
+    assert "differs" in msg
+    assert "--on-conflict skip" in msg
+
+
+def test_import_document_edited_content_conflict_skip(conn):
+    conn.traces.import_document(ctf_document(id="d1", content="original"), "documents")
+    edited = ctf_document(id="d1", content="edited")
+    with pytest.warns(UserWarning, match="keeping stored version"):
+        result = conn.traces.import_document(edited, "documents", on_conflict="skip")
+    assert result == "skipped_conflict"
+    assert conn.traces.get("d1")["content"] == "original"
+
+
+# an explicit content_type participates in the hash, so the same content string
+# under a different content_type is a distinct idempotency fingerprint
+def test_import_document_content_type_participates_in_hash(conn):
+    conn.traces.import_document(ctf_document(id="d1", content="same"), "documents")
+    with pytest.raises(UserError):
+        conn.traces.import_document(
+            ctf_document(id="d1", content="same", content_type="markdown"), "documents"
+        )
 
 
 def test_repository_writes_join_outer_transaction(conn):

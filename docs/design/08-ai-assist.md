@@ -67,10 +67,13 @@ with ONLY a JSON object — no prose, no markdown fences.
 #       error_type: choose zero or more of [...] as a JSON array
 
 # Conversation context
-{render_transcript(ctx.turns)}                 # full trace, roles labeled, tool calls summarized
+{ctx.document if ctx.document is not None else render_transcript(ctx.turns)}
+# document trace: the document body verbatim. conversation trace: full trace,
+# roles labeled, tool calls summarized
 
 # Target
-{"Turn #" + str(ctx.target_idx) + " (marked >>> above)" if cfg.level == "turn" else "The entire conversation"}
+{"The document below" if ctx.document is not None else
+ ("Turn #" + str(ctx.target_idx) + " (marked >>> above)" if cfg.level == "turn" else "The entire conversation")}
 
 Respond with the JSON object now."""
 ```
@@ -78,7 +81,9 @@ Respond with the JSON object now."""
 Context policy: include the full trace (the target marked `>>>`), truncating longest tool
 outputs first if the rendered transcript exceeds a budget (default 24k chars), with a
 `[...truncated N chars...]` marker. Model output that fails schema validation after one
-re-ask counts as a failed item — **never store an invalid suggestion.**
+re-ask counts as a failed item — **never store an invalid suggestion.** A document trace has no
+turns to render or truncate — `load_context` detects a non-null `trace.content` and short-circuits
+straight to the document body (07 §9).
 
 ## 4. Review flow in the UI (see 06 §5)
 

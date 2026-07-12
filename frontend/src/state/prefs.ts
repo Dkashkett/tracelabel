@@ -28,7 +28,8 @@ export function setAutoAdvance(on: boolean): void {
 }
 
 export function getTheme(): Theme {
-  return read(THEME_KEY) === "dark" ? "dark" : "light";
+  const saved = read(THEME_KEY);
+  return saved === "light" || saved === "dark" ? saved : "dark";
 }
 
 export function setTheme(theme: Theme): void {
