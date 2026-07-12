@@ -86,7 +86,7 @@ function focusTurn(idx: number, list: VirtualizerHandle) {
 
 ## 4. Content rendering
 
-One `TurnCard` per top-level display group; role drives a colored left border (user=blue,
+One `TurnCard` per top-level display row; role drives a colored left border (user=blue,
 assistant=green, tool=amber, system=gray) so the eye navigates structure without reading. Color is
 otherwise reserved for meaning (roles, pass/fail states); the chrome is near-monochrome.
 
@@ -98,15 +98,22 @@ otherwise reserved for meaning (roles, pass/fail states); the chrome is near-mon
 | `parts` | parts rendered in sequence, each by its own type's renderer |
 | `markdown` (documents only) | `react-markdown` + `remark-gfm`, styled with `@tailwindcss/typography` (`prose prose-sm dark:prose-invert`) — no `dangerouslySetInnerHTML` anywhere |
 
-The presentation layer pairs assistant `tool_calls` with later tool turns by exact
-`tool_call_id`, without mutating API data. Each call/result interaction renders as an indented
-child of its assistant turn. Its compact row (disclosure indicator + function name) is collapsed
-by default; opening it reveals the raw `arguments` string and the normal content renderer for the
-result. Multiple interactions retain call order. Calls with missing results remain expandable and
-unmatched tool-result turns remain standalone `TurnCard`s, so incomplete traces never lose data.
-Nested interactions inherit their assistant row's active/dimmed context and do not add virtual
-rows or click-navigation stops. Disclosure changes explicitly remeasure the containing virtual
-row to avoid overlap or clipping.
+Tool presentation follows `session.level`, without mutating API data:
+
+- **Trace level:** the presentation layer pairs assistant `tool_calls` with later tool turns by
+  exact `tool_call_id`. All calls from one assistant message render in a single collapsed,
+  low-chrome **Tool activity** disclosure on that message. Its summary reports call names, results
+  received, and calls without results without interpreting payload success. Opening it reveals
+  each raw argument string and matched result in call order. Matched results leave the top-level
+  display only; unmatched results remain standalone. Empty call-only assistant messages omit the
+  blank content body, and later assistant responses remain separate chronological rows.
+- **Turn level:** the virtual list uses the raw `turns` array, preserving every protocol message
+  as a top-level row in API order. Calls remain summarized inline on their originating assistant
+  turn, but tool results are never absorbed. The active tool-calling assistant automatically
+  exposes its arguments; moving away restores the compact summary. Labelable tool-result rows
+  retain their own click target, keyboard focus, active ring, and annotation target.
+
+Disclosure changes explicitly remeasure the containing virtual row to avoid overlap or clipping.
 
 Long standalone turn content clamps to `max-height: 40vh` with expand-on-click — a 400-line
 payload must not push the next turn off screen by default. The turn list is virtualized (TanStack

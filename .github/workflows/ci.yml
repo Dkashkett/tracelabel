@@ -47,8 +47,8 @@ jobs:
       - name: Build
         run: npm run build
 
-  # E2E-01: the one test that protects the pitch. Linux-only for PR CI is acceptable; release
-  # re-runs it against the built wheel (09 §4).
+  # E2E-01: browser coverage for the core workflow and level-aware tool presentation. Linux-only
+  # for PR CI is acceptable; release re-runs it against the built wheel (09 §4).
   smoke:
     runs-on: ubuntu-latest
     steps:

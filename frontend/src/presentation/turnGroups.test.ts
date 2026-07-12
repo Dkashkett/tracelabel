@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Turn } from "@/api/types";
-import { groupToolInteractions } from "./turnGroups";
+import { groupToolInteractions, rawTurnGroups } from "./turnGroups";
 
 function turn(overrides: Partial<Turn> & Pick<Turn, "id" | "idx" | "role">): Turn {
   return {
@@ -121,5 +121,30 @@ describe("groupToolInteractions", () => {
       "t#1",
       "t#3",
     ]);
+  });
+});
+
+describe("rawTurnGroups", () => {
+  it("preserves every source turn in exact order and leaves results standalone", () => {
+    const assistant = turn({
+      id: "t#0",
+      idx: 0,
+      role: "assistant",
+      tool_calls: [{ id: "call_1", name: "search", arguments: "{}" }],
+    });
+    const result = turn({
+      id: "t#1",
+      idx: 1,
+      role: "tool",
+      tool_call_id: "call_1",
+    });
+    const final = turn({ id: "t#2", idx: 2, role: "assistant" });
+
+    const groups = rawTurnGroups([assistant, result, final]);
+
+    expect(groups.map(({ turn: item }) => item)).toEqual([assistant, result, final]);
+    expect(groups[0].toolInteractions).toHaveLength(1);
+    expect(groups[0].toolInteractions[0].result).toBeNull();
+    expect(groups[1].toolInteractions).toEqual([]);
   });
 });

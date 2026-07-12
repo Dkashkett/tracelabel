@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useController } from "@/state/NavContext";
-import { groupToolInteractions } from "@/presentation/turnGroups";
+import { groupToolInteractions, rawTurnGroups } from "@/presentation/turnGroups";
 import { DocumentPane } from "./DocumentPane";
 import { TurnCard } from "./TurnCard";
 
@@ -10,9 +10,12 @@ const ESTIMATED_TURN_HEIGHT = 120;
 export function TracePane() {
   const { trace, session, state, focusTurnByIdx } = useController();
   const turns = trace.turns;
-  const groups = useMemo(() => groupToolInteractions(turns), [turns]);
   const parentRef = useRef<HTMLDivElement>(null);
   const turnLevel = session.level === "turn";
+  const groups = useMemo(
+    () => (turnLevel ? rawTurnGroups(turns) : groupToolInteractions(turns)),
+    [turnLevel, turns],
+  );
 
   const virtualizer = useVirtualizer({
     count: groups.length,
@@ -33,7 +36,13 @@ export function TracePane() {
     virtualizer.scrollToIndex(activeArrayIdx, { align: "start" });
     const el = parentRef.current;
     if (el) {
-      requestAnimationFrame(() => el.scrollBy({ top: -el.clientHeight / 3, behavior: "smooth" }));
+      const activeTurnIdx = groups[activeArrayIdx]?.turn.idx;
+      requestAnimationFrame(() => {
+        el.querySelector<HTMLElement>(`[data-turn-idx="${activeTurnIdx}"]`)?.focus({
+          preventScroll: true,
+        });
+        el.scrollBy?.({ top: -el.clientHeight / 3, behavior: "smooth" });
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeArrayIdx, trace.trace.id, turnLevel]);
@@ -98,6 +107,7 @@ export function TracePane() {
                 dimmed={dimmed}
                 onSelect={() => turn.labelable && focusTurnByIdx(turn.idx)}
                 toolInteractions={group.toolInteractions}
+                showToolResults={!turnLevel}
                 onSizeChange={remeasure}
               />
             </div>

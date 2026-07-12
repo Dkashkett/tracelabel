@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/api/types";
 import type { ToolInteraction } from "@/presentation/turnGroups";
-import { ToolCallCard } from "./ToolCallCard";
+import { ToolActivity } from "./ToolActivity";
 import { ContentByType } from "./renderers/ContentByType";
 
 const roleBorder: Record<Turn["role"], string> = {
@@ -22,6 +22,7 @@ export function TurnCard({
   dimmed,
   onSelect,
   toolInteractions = [],
+  showToolResults = true,
   onSizeChange,
 }: {
   turn: Turn;
@@ -29,11 +30,13 @@ export function TurnCard({
   dimmed: boolean;
   onSelect: () => void;
   toolInteractions?: ToolInteraction[];
+  showToolResults?: boolean;
   onSizeChange?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const hasContent = turn.content.length > 0;
 
   // A 400-line tool output must not push the next turn off screen (06 §4): clamp to 40vh.
   useLayoutEffect(() => {
@@ -43,9 +46,18 @@ export function TurnCard({
 
   return (
     <div
+      data-turn-id={turn.id}
+      data-turn-idx={turn.idx}
+      data-turn-role={turn.role}
+      data-active={active ? "true" : "false"}
+      data-labelable={turn.labelable ? "true" : "false"}
+      tabIndex={turn.labelable ? 0 : undefined}
+      onFocus={(event) => {
+        if (turn.labelable && event.target === event.currentTarget) onSelect();
+      }}
       onClick={onSelect}
       className={cn(
-        "border-l-4 bg-white px-4 py-3 transition-opacity dark:bg-slate-900",
+        "border-l-4 bg-white px-4 py-3 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500 dark:bg-slate-900",
         roleBorder[turn.role],
         active && "ring-2 ring-sky-500",
         dimmed && "opacity-40",
@@ -60,21 +72,25 @@ export function TurnCard({
         )}
       </div>
 
-      <div
-        ref={bodyRef}
-        className="overflow-hidden"
-        style={{ maxHeight: expanded ? "none" : "40vh" }}
-      >
-        <Content turn={turn} />
-      </div>
+      {hasContent && (
+        <div
+          ref={bodyRef}
+          data-turn-content="true"
+          className="overflow-hidden"
+          style={{ maxHeight: expanded ? "none" : "40vh" }}
+        >
+          <Content turn={turn} />
+        </div>
+      )}
 
-      {toolInteractions.map((interaction, i) => (
-        <ToolCallCard
-          key={interaction.call.id ?? i}
-          interaction={interaction}
+      {toolInteractions.length > 0 && (
+        <ToolActivity
+          interactions={toolInteractions}
+          showResults={showToolResults}
+          autoExpand={!showToolResults && active}
           onExpandedChange={onSizeChange}
         />
-      ))}
+      )}
 
       {clamped && !expanded && (
         <button

@@ -1,0 +1,4 @@
+data: traces.jsonl
+task: e2e-turn-tools
+level: turn
+label_roles: [assistant, tool]

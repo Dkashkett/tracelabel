@@ -62,11 +62,11 @@ repo/
 - **Property tests:** schema_hash stability (no-config ≡ explicit pass_fail); import
   idempotency (import twice ≡ import once); canonical_json determinism.
 - **API tests:** full write-path validation matrix from 05 §3.
-- **E2E smoke (Playwright):** `tracelabel demo --no-browser` → j → 1 → type reason →
-  commit → assert annotation row exists and progress incremented. This one test protects
-  the entire pitch. (Commit is `Cmd/Ctrl+Enter` when a text field holds focus, plain
-  `Enter` in NAV mode — see the keyboard model in 06 §2; a bare `Enter` inside a textarea
-  is a newline, not a commit.)
+- **E2E smoke (Playwright):** the trace-level workflow runs j → 1 → type reason → commit and
+  asserts the annotation and progress; a turn-level tool fixture asserts raw source order,
+  call-argument visibility, tool-result navigation, and independent tool annotation. (Commit is
+  `Cmd/Ctrl+Enter` when a text field holds focus, plain `Enter` in NAV mode — see the keyboard
+  model in 06 §2; a bare `Enter` inside a textarea is a newline, not a commit.)
 - CI matrix: {macOS, Linux, Windows} × {3.10, 3.12}.
 
 ## 5. Launch checklist (adoption levers, from the design discussion)

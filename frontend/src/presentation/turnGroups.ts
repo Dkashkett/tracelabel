@@ -24,6 +24,20 @@ function presentToolCall(call: ToolCall): PresentedToolCall {
   };
 }
 
+function toolInteractionsForTurn(turn: Turn): ToolInteraction[] {
+  return turn.role === "assistant"
+    ? (turn.tool_calls ?? []).map((call) => ({ call: presentToolCall(call), result: null }))
+    : [];
+}
+
+/**
+ * Turn-level labeling presents the source protocol verbatim: every source turn remains a
+ * top-level row, while calls stay inline on the assistant turn that emitted them.
+ */
+export function rawTurnGroups(turns: Turn[]): TurnGroup[] {
+  return turns.map((turn) => ({ turn, toolInteractions: toolInteractionsForTurn(turn) }));
+}
+
 /**
  * Builds a display-only hierarchy without changing the API turns. A tool result is consumed by
  * the earliest preceding, still-unmatched call with the same id. Results that cannot be paired
@@ -44,10 +58,7 @@ export function groupToolInteractions(turns: Turn[]): TurnGroup[] {
       }
     }
 
-    const toolInteractions: ToolInteraction[] =
-      turn.role === "assistant"
-        ? (turn.tool_calls ?? []).map((call) => ({ call: presentToolCall(call), result: null }))
-        : [];
+    const toolInteractions = toolInteractionsForTurn(turn);
     groups.push({ turn, toolInteractions });
 
     for (const interaction of toolInteractions) {
