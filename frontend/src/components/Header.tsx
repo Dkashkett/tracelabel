@@ -3,7 +3,7 @@ import { useController } from "@/state/NavContext";
 import { getTheme, setTheme, type Theme } from "@/state/prefs";
 
 export function Header() {
-  const { session, completionCounts, state, toggleAutoAdvance, setCheatOpen } = useController();
+  const { session, completionCounts, canGoBack, goBack, setCheatOpen } = useController();
   const [theme, setThemeState] = useState<Theme>(getTheme);
 
   const { total, labeled, skipped } = completionCounts;
@@ -32,15 +32,15 @@ export function Header() {
         </span>
       </div>
 
-      <label className="flex items-center gap-1 text-xs text-slate-500">
-        <input
-          type="checkbox"
-          checked={state.autoAdvance}
-          onChange={toggleAutoAdvance}
-          className="accent-sky-500"
-        />
-        auto-advance
-      </label>
+      <button
+        type="button"
+        onClick={goBack}
+        disabled={!canGoBack}
+        title="back to previous target (u)"
+        className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800"
+      >
+        ← Back
+      </button>
       <button
         type="button"
         onClick={flipTheme}

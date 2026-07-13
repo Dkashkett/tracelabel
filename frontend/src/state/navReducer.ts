@@ -3,6 +3,12 @@ import type { QueueEntry, ResolvedField } from "@/api/types";
 export type Mode = "NAV" | "FIELD";
 export type Workflow = "labeling" | "finished" | "review";
 export type Draft = Record<string, string | string[]>;
+export interface TargetHistoryEntry {
+  traceIdx: number;
+  turnIdx: number | null;
+  draft: Draft;
+  prefillModel: string | null;
+}
 
 // Exactly the shape in docs/design/06-frontend.md §6.
 export interface NavState {
@@ -11,7 +17,7 @@ export interface NavState {
   mode: Mode;
   draft: Draft; // form values before commit
   prefillModel: string | null;
-  autoAdvance: boolean;
+  history: TargetHistoryEntry[];
   peek: boolean;
   workflow: Workflow;
 }
@@ -24,19 +30,21 @@ export type NavAction =
   | { type: "SET_FIELD"; name: string; value: string | string[] }
   | { type: "TOGGLE_MULTI"; name: string; option: string }
   | { type: "CLEAR_DRAFT" }
-  | { type: "TOGGLE_AUTO_ADVANCE" }
+  | { type: "REMEMBER_TARGET"; target: TargetHistoryEntry }
+  | { type: "POP_HISTORY" }
   | { type: "SET_PEEK"; peek: boolean }
   | { type: "SHOW_FINISHED" }
+  | { type: "ENTER_REVIEW" }
   | { type: "REVIEW_TRACE"; idx: number };
 
-export function initialNavState(autoAdvance: boolean): NavState {
+export function initialNavState(): NavState {
   return {
     traceIdx: 0,
     turnIdx: null,
     mode: "NAV",
     draft: {},
     prefillModel: null,
-    autoAdvance,
+    history: [],
     peek: false,
     workflow: "labeling",
   };
@@ -68,12 +76,29 @@ export function navReducer(state: NavState, action: NavAction): NavState {
     case "CLEAR_DRAFT":
       // explicit clear zeroes prefill provenance (06 §5)
       return { ...state, draft: {}, prefillModel: null };
-    case "TOGGLE_AUTO_ADVANCE":
-      return { ...state, autoAdvance: !state.autoAdvance };
+    case "REMEMBER_TARGET": {
+      const previous = state.history[state.history.length - 1];
+      if (
+        previous?.traceIdx === action.target.traceIdx &&
+        previous.turnIdx === action.target.turnIdx
+      ) {
+        return {
+          ...state,
+          history: [...state.history.slice(0, -1), action.target],
+        };
+      }
+      return { ...state, history: [...state.history, action.target] };
+    }
+    case "POP_HISTORY":
+      return { ...state, history: state.history.slice(0, -1) };
     case "SET_PEEK":
       return { ...state, peek: action.peek };
     case "SHOW_FINISHED":
       return { ...state, mode: "NAV", peek: false, workflow: "finished" };
+    case "ENTER_REVIEW":
+      // Server-driven review mode: correct another annotator's labels from the first target on
+      // (unlike REVIEW_TRACE, this doesn't move position — the queue is already the judge targets).
+      return { ...state, workflow: "review" };
     case "REVIEW_TRACE":
       return {
         ...state,

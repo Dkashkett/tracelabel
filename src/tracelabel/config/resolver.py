@@ -50,17 +50,30 @@ class ConfigResolver:
             raise UserError("No data file given (arg or `data:` in YAML)")
         fields = expand_presets(raw.fields) if raw.fields is not None else list(DEFAULT_FIELDS)
         self._check_unique_names(fields)
+        annotator = cli.annotator or raw.annotator or self._username_provider()
+        review_of = cli.review_of or (raw.review.of if raw.review else None)
+        review_labels_from = (
+            cli.review_labels_from or (raw.review.labels_from if raw.review else None) or "judge"
+        )
+        if review_of is not None and review_of == annotator:
+            raise UserError(
+                f"--review-of '{review_of}' must differ from the reviewer's annotator "
+                f"'{annotator}' (else the review would overwrite the labels being reviewed). "
+                "Pass a different --annotator."
+            )
         return ResolvedTaskConfig(
             name=cli.task or raw.task or default_task_name(data),
             level=cli.level or raw.level,
             fields=[canonical_field_dict(field) for field in fields],
             label_roles=raw.label_roles or ["assistant"],
             shuffle=cli.shuffle if cli.shuffle is not None else raw.shuffle,
-            annotator=cli.annotator or raw.annotator or self._username_provider(),
+            annotator=annotator,
             schema_hash=schema_hash(fields),
             data_path=data,
             llm=raw.llm,
             suggest_instructions=raw.suggest.instructions if raw.suggest else None,
+            review_of=review_of,
+            review_labels_from=review_labels_from,
         )
 
     @staticmethod

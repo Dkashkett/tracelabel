@@ -11,7 +11,7 @@ import {
   type NavState,
 } from "./navReducer";
 
-const base = (): NavState => initialNavState(true);
+const base = (): NavState => initialNavState();
 
 describe("navReducer", () => {
   it("seeds a draft on LOAD_TARGET and carries prefill provenance", () => {
@@ -54,9 +54,28 @@ describe("navReducer", () => {
     expect(s.turnIdx).toBeNull();
   });
 
-  it("toggles auto-advance", () => {
-    const s = navReducer(base(), { type: "TOGGLE_AUTO_ADVANCE" });
-    expect(s.autoAdvance).toBe(false);
+  it("records target history without consecutive duplicates and pops in order", () => {
+    let s = navReducer(base(), {
+      type: "REMEMBER_TARGET",
+      target: { traceIdx: 0, turnIdx: 2, draft: { verdict: "pass" }, prefillModel: null },
+    });
+    s = navReducer(s, {
+      type: "REMEMBER_TARGET",
+      target: { traceIdx: 0, turnIdx: 2, draft: { verdict: "fail" }, prefillModel: "model" },
+    });
+    s = navReducer(s, {
+      type: "REMEMBER_TARGET",
+      target: { traceIdx: 1, turnIdx: null, draft: {}, prefillModel: null },
+    });
+    expect(s.history).toEqual([
+      { traceIdx: 0, turnIdx: 2, draft: { verdict: "fail" }, prefillModel: "model" },
+      { traceIdx: 1, turnIdx: null, draft: {}, prefillModel: null },
+    ]);
+
+    s = navReducer(s, { type: "POP_HISTORY" });
+    expect(s.history).toEqual([
+      { traceIdx: 0, turnIdx: 2, draft: { verdict: "fail" }, prefillModel: "model" },
+    ]);
   });
 
   it("enters the finished screen and restores review mode at a selected trace", () => {

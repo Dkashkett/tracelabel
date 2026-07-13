@@ -4,6 +4,11 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The Python server and wheel both serve assets from this package directory.
+    outDir: path.resolve(__dirname, "../src/tracelabel/static"),
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

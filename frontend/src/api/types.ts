@@ -10,6 +10,8 @@ export interface SessionInfo {
   annotator: string;
   schema_hash: string;
   shuffle: boolean;
+  mode: "labeling" | "review"; // "review" = correcting another annotator's existing labels
+  review_of: string | null; // in review mode, the annotator (judge) whose labels are reviewed
 }
 export interface ResolvedField {
   name: string;
@@ -37,6 +39,7 @@ export interface TraceDetail {
   document?: DocumentDetail; // set iff the trace is a document (content non-null); turns is [] then
   annotations: Record<string, AnnotationOut>; // keyed by target_id, this task+annotator only
   suggestions: Record<string, SuggestionOut>; // keyed by target_id
+  review_of: Record<string, AnnotationOut>; // review mode: judge labels being reviewed, by target_id
 }
 export interface DocumentDetail {
   content: string;

@@ -56,7 +56,7 @@ Component stack (locked):
 | DB           | SQLite (stdlib `sqlite3`), WAL mode, `PRAGMA user_version` migrations |
 | Frontend     | Vite + React 18 + TypeScript + Tailwind + shadcn/ui + TanStack Query + TanStack Virtual |
 | AI assist    | litellm, optional extra: `pip install tracelabel[ai]` |
-| Packaging    | hatchling; frontend `dist/` copied into package data in CI |
+| Packaging    | hatchling; Vite builds directly into package data in CI |
 | License      | Apache-2.0                                         |
 | Telemetry    | **None.** Not opt-in, not opt-out — none.          |
 

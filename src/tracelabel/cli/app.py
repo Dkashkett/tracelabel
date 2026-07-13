@@ -56,6 +56,8 @@ def serve(
     no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
     yes: Annotated[bool, typer.Option("--yes")] = False,
     all_: Annotated[bool, typer.Option("--all")] = False,
+    review_of: Annotated[str | None, typer.Option("--review-of")] = None,
+    labels_from: Annotated[str | None, typer.Option("--labels-from")] = None,
 ) -> None:
     path = target_path(target)
     cli = CliArgs(
@@ -65,6 +67,8 @@ def serve(
         shuffle=shuffle,
         db=db,
         yes=yes,
+        review_of=review_of,
+        review_labels_from=labels_from,
     )
     config = ConfigResolver().resolve(raw_config_for_target(path), cli)
     project_dir = path if path.is_dir() else path.parent

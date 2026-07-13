@@ -14,6 +14,8 @@ class SessionInfo(BaseModel):
     annotator: str
     schema_hash: str
     shuffle: bool
+    mode: Literal["labeling", "review"] = "labeling"
+    review_of: str | None = None
 
 
 class QueueEntry(BaseModel):
@@ -83,6 +85,9 @@ class TraceDetail(BaseModel):
     document: DocumentOut | None = None
     annotations: dict[str, AnnotationOut]
     suggestions: dict[str, SuggestionOut]
+    # In review mode, the labels being reviewed (the source/judge annotator's annotations),
+    # keyed by target_id. Empty in normal labeling.
+    review_of: dict[str, AnnotationOut] = {}
 
 
 class Progress(BaseModel):

@@ -63,8 +63,20 @@ function handleKeyDown(e: KeyboardEvent, ctl: Controller) {
     return;
   }
 
+  if (
+    e.key === "u" &&
+    !inText &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey
+  ) {
+    ctl.goBack();
+    e.preventDefault();
+    return;
+  }
+
   // Completion has no hidden form actions. Selecting a trace from the drawer enters review mode
-  // and restores the normal keyboard model.
+  // and restores the normal keyboard model. Back remains available to revisit the final target.
   if (ctl.isFinished) return;
 
   // FIELD typing: only Cmd/Ctrl+Enter is intercepted (commit); everything else types (06 §2).
@@ -111,10 +123,6 @@ function handleKeyDown(e: KeyboardEvent, ctl: Controller) {
       break;
     case "s":
       ctl.skip();
-      e.preventDefault();
-      break;
-    case "u":
-      ctl.prevTarget();
       e.preventDefault();
       break;
     case "v":

@@ -59,13 +59,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Build SPA and vendor it into the package
+      - name: Build SPA into the package
         run: |
           npm ci --prefix frontend
           npm run build --prefix frontend
-          rm -rf src/tracelabel/static
-          mkdir -p src/tracelabel/static
-          cp -r frontend/dist/* src/tracelabel/static/
       - name: check-static (PKG-01)
         run: test -f src/tracelabel/static/index.html
       - name: Install package

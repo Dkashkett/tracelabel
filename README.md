@@ -1,6 +1,6 @@
 # tracelabel [![Release](https://github.com/Dkashkett/tracelabel/actions/workflows/release.yml/badge.svg)](https://github.com/Dkashkett/tracelabel/actions/workflows/release.yml)
 
-**Local-first, zero-config labeling for agent traces — keyboard-fast, no accounts, no server.**
+**Local-first, lightweight labeling — keyboard-fast, no accounts, no server.**
 
 One `pip install`. One command. Your browser opens on a keyboard-driven labeling UI over your
 own traces. No sign-up, no cloud, no Node, no database to stand up. It's a single Python wheel
@@ -159,8 +159,9 @@ only — there is no live Datadog API sync.)
   data isn't already in the native format, `import` it first, then `serve --all` to label everything in the db.
 
 Useful `serve` flags: `--task NAME`, `--level turn|trace`, `--all` (label the whole db, not just
-the file you served), `--port` (default `8377`), `--no-browser`, `--shuffle/--no-shuffle`. The
-server binds `127.0.0.1` only.
+the file you served), `--review-of NAME` / `--labels-from KEY` (review an LLM judge's existing
+labels — see [Reviewing an LLM judge's labels](#reviewing-an-llm-judges-labels)), `--port`
+(default `8377`), `--no-browser`, `--shuffle/--no-shuffle`. The server binds `127.0.0.1` only.
 
 ## Common workflows
 
@@ -319,6 +320,45 @@ Field types map one-to-one to UI controls and to export columns. Add a field, ge
 target and a new column — no redesign. With a `config.yaml` present you can run `tracelabel serve`
 (no file argument) and it uses the `data:` path from the config.
 
+## Reviewing an LLM judge's labels
+
+When a model has already judged your traces — a `pass`/`fail` verdict plus reasoning per trace —
+review mode lets a human sweep those predictions and **approve or correct** each one, keyboard-fast.
+It's `serve` inverted: instead of stepping through *unlabeled* targets, it steps through the
+targets the judge already labeled, seeding the form from the judge's verdict so `Enter` **approves**
+it as-is, `1`/`2` **flip** the verdict, and `r` edits the reasoning.
+
+Put each judge label on its trace line under a `judge` key (a values dict keyed by your schema
+fields), and give every labeled line an `id` so the label can be matched to its trace:
+
+```jsonl
+{"id": "t1", "messages": [...], "judge": {"verdict": "pass", "reasoning": "answered correctly"}}
+{"id": "t2", "messages": [...], "judge": {"verdict": "pass", "reasoning": "looks fine"}}
+```
+
+```bash
+tracelabel serve traces.jsonl --review-of gpt-4o   # opens on the first judge label to review
+tracelabel export --joined                          # judge + your labels, one row each
+```
+
+The judge is stored as its **own annotator** (here `gpt-4o`), and your corrections as a second
+annotator — so the original prediction is **preserved**, and export emits one row per annotator per
+trace. Diff them to measure how often the judge was right:
+
+```python
+import pandas as pd
+df = pd.read_json("traces-2026-07-12-annotations.jsonl", lines=True)
+v = df.assign(verdict=df["values"].str["verdict"]).pivot(
+    index="trace_id", columns="annotator", values="verdict")
+agree = (v["gpt-4o"] == v["me"]).mean()   # judge accuracy vs. your review
+```
+
+Review mode is **trace-level** (the `pass_fail` default) and single judge per run. Flags:
+`--review-of NAME` (the judge's annotator name; turns review mode on), `--labels-from KEY`
+(the source-line key; default `judge`), and `--annotator NAME` for your own name (must differ from
+the judge). You can also set these under a `review:` block in `config.yaml`
+(`review: {of: gpt-4o, labels_from: judge}`).
+
 ## One db, many files
 
 tracelabel stores one shared pool of traces per project (`.tracelabel/tracelabel.db`) — traces
@@ -376,6 +416,11 @@ tracelabel merge alice.db bob.db      # (planned) combine independent annotators
 
 Each person labels locally into their own `.db`; you merge and compute agreement offline. Nothing
 about the storage format needs to change to get there.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, frontend build behavior, and test
+commands.
 
 ## License
 

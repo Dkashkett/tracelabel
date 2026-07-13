@@ -6,9 +6,9 @@ and flow state. The content is the loudest thing on screen; the UI is deliberate
 Stack: Vite + React 18 + TypeScript + Tailwind + shadcn/ui (vendored components, no runtime
 dep) + TanStack Query (server state) + TanStack Virtual (turn list). **No Redux** — client
 state is only "current position + form draft," held in a `useReducer` context.
-UI prefs (auto-advance and theme) persist in `localStorage`. Dark is the default when the theme
-preference is missing or invalid; an explicitly stored `light` preference is preserved. A small
-head script applies that resolution before the app and stylesheet paint, preventing a light flash.
+The theme preference persists in `localStorage`. Dark is the default when the preference is
+missing or invalid; an explicitly stored `light` preference is preserved. A small head script
+applies that resolution before the app and stylesheet paint, preventing a light flash.
 
 ## 1. Layout
 
@@ -45,12 +45,12 @@ Two modes: **NAV** (default) and **FIELD** (focus inside an input).
 | `j` / `k` | next / prev **labelable** turn (turn level) | — (types) |
 | `n` / `p` | next / prev trace | — |
 | `1`–`9` | select option N of the **primary select** (§2.1) | option N of *focused* select |
-| `Enter` | commit + auto-advance (if valid) | textarea: newline; `Cmd/Ctrl+Enter` commits |
+| `Enter` | commit + advance (if valid) | textarea: newline; `Cmd/Ctrl+Enter` commits |
 | `r` | focus first text field | — |
 | `Tab` / `Shift+Tab` | enter FIELD mode, cycle fields | cycle fields |
 | `Esc` | — | back to NAV |
 | `s` | skip target + advance | — |
-| `u` | jump to previous target, form pre-filled for edit | — |
+| `u` | back through session target history, form pre-filled for edit | — |
 | `v` (hold) | peek: un-dim all turns while held | — |
 | `?` | toggle cheatsheet overlay | — |
 
@@ -58,12 +58,12 @@ Two modes: **NAV** (default) and **FIELD** (focus inside an input).
 select of any kind. Digits map to its options by index (options order comes from the schema —
 1=pass, 2=fail in default mode). Single_select digit = choose; multi_select digit = toggle.
 
-**2.2 Commit & auto-advance:** commit validates required fields (inline errors if not),
+**2.2 Commit & advance:** commit validates required fields (inline errors if not),
 `PUT /api/annotations`, then advances to the **next unaddressed target** (skipping labeled +
 skipped ones), crossing trace boundaries and wrapping past the physical end when an earlier target
-is still unfinished. Auto-advance is ON by default with a header toggle — some people hate it.
-`u` is the escape hatch auto-advance makes necessary: mistakes *will* be committed;
-last-write-wins editing is the undo.
+is still unfinished. The header's **Back** action (`u`) walks an in-memory history of targets
+visited during the current browser session, including the item just committed or skipped.
+Returning to a target pre-fills its saved annotation; last-write-wins editing is the undo.
 
 **2.3 Save on commit, never submit-at-end.** Every commit writes immediately; the ●saved
 indicator flips on mutation settle. Closing the laptop mid-session costs nothing.
@@ -152,7 +152,11 @@ interface NavState {
   mode: "NAV" | "FIELD";
   draft: Record<string, string | string[]>;   // form values before commit
   prefillModel: string | null;
-  autoAdvance: boolean; peek: boolean;
+  history: Array<{
+    traceIdx: number; turnIdx: number | null;
+    draft: Record<string, string | string[]>; prefillModel: string | null;
+  }>;
+  peek: boolean;
   workflow: "labeling" | "finished" | "review";
 }
 ```
@@ -190,5 +194,5 @@ final submission button or backend workflow state; every annotation continues to
 ## 8. Anti-goals
 
 No dashboards, charts, or pass-rate summaries in this UI — that's what export + pandas is
-for. No settings pages beyond the two toggles (auto-advance, theme). The UI's one job is
-making the next annotation effortless.
+for. No settings page: the only preference is the header theme toggle. The UI's one job is making
+the next annotation effortless.

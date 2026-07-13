@@ -164,6 +164,37 @@ class AnnotationRepository:
             for row in rows
         }
 
+    def review_counts(
+        self,
+        task: str,
+        source_annotator: str,
+        reviewer_annotator: str,
+    ) -> dict[str, tuple[int, int, int]]:
+        """Per-trace ``(n_targets, n_reviewed, n_skipped)`` for review mode, where the target
+        universe is the targets the *source* annotator labeled (the judge) and the completion
+        counts are the *reviewer's* annotations on those same targets. Trace-level only."""
+        rows = self._connection.execute(
+            "SELECT src.target_id AS tid, "
+            "  1 AS n_targets, "
+            "  sum(CASE WHEN rev.status='labeled' THEN 1 ELSE 0 END) AS n_labeled, "
+            "  sum(CASE WHEN rev.status='skipped' THEN 1 ELSE 0 END) AS n_skipped "
+            "FROM annotations src "
+            "LEFT JOIN annotations rev "
+            "  ON rev.task=src.task AND rev.annotator=? AND rev.target_type=src.target_type "
+            "     AND rev.target_id=src.target_id "
+            "WHERE src.task=? AND src.annotator=? AND src.target_type='trace' "
+            "GROUP BY src.target_id",
+            (reviewer_annotator, task, source_annotator),
+        ).fetchall()
+        return {
+            str(row["tid"]): (
+                int(row["n_targets"]),
+                int(row["n_labeled"] or 0),
+                int(row["n_skipped"] or 0),
+            )
+            for row in rows
+        }
+
     def unaddressed_targets(
         self, config: ResolvedTaskConfig, trace_ids: list[str] | None = None
     ) -> list[str]:

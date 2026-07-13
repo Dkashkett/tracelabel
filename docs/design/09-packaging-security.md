@@ -8,8 +8,8 @@ Distribution is the killer feature. **Users never touch Node, never clone a repo
 - Runtime deps (core): `fastapi`, `uvicorn`, `pydantic>=2`, `typer`, `pyyaml`. That's it.
 - Optional extras: `tracelabel[ai]` → `litellm`. Import of litellm is lazy and guarded
   (04 §7 error message).
-- Frontend is **built in CI** (`vite build`) and the hashed `dist/` output is copied into
-  `src/tracelabel/static/` before `hatch build`, shipping inside the wheel (the
+- Frontend is **built in CI** (`vite build`) directly into `src/tracelabel/static/` before
+  `hatch build`, shipping inside the wheel (the
   MLflow/Prefect/Streamlit pattern). A CI check fails the release if `static/index.html`
   is missing — never ship a wheel without the UI.
 - Bundled demo data: `src/tracelabel/demo_data/traces.jsonl` (~25 traces: tool-use agent
@@ -23,10 +23,10 @@ repo/
 │   ├── cli.py  server.py  config.py  db.py  ctf.py
 │   ├── adapters/{loose,adk,datadog}.py
 │   ├── suggest.py  export.py
-│   ├── static/               # CI-populated, gitignored
+│   ├── static/               # Vite-populated, gitignored
 │   └── demo_data/
 ├── docs/                     # these specs + pandas.md + trace-format.md (public copy of 01)
-└── .github/workflows/release.yml   # vite build → copy → hatch build → pypi publish
+└── .github/workflows/release.yml   # vite build → hatch build → pypi publish
 ```
 
 ## 2. Security posture

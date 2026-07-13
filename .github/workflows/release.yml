@@ -23,21 +23,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 1. Build the frontend.
-      - name: Build SPA
+      # 1. Build the frontend directly into the package's static directory.
+      - name: Build SPA into package
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
-      # 2. Copy the hashed dist into the package so hatch ships it inside the wheel.
-      - name: Vendor SPA into package
-        run: |
-          rm -rf src/tracelabel/static
-          mkdir -p src/tracelabel/static
-          cp -r frontend/dist/* src/tracelabel/static/
-
-      # 3. PKG-01: never ship a wheel without the UI.
+      # 2. PKG-01: never ship a wheel without the UI.
       - name: check-static
         run: |
           if [ ! -f src/tracelabel/static/index.html ]; then
@@ -45,7 +38,7 @@ jobs:
             exit 1
           fi
 
-      # 4. Build the wheel, install it in a clean venv, and prove it runs.
+      # 3. Build the wheel, install it in a clean venv, and prove it runs.
       - name: Build wheel
         run: |
           python -m pip install --upgrade pip hatch
@@ -71,6 +64,6 @@ jobs:
           npx playwright install --with-deps chromium
           PATH="/tmp/clean/bin:$PATH" npx playwright test
 
-      # 5. Publish.
+      # 4. Publish.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

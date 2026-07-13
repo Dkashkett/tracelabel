@@ -42,6 +42,8 @@ const session: SessionInfo = {
   annotator: "dan",
   schema_hash: "sha256:demo0000",
   shuffle: false,
+  mode: "labeling",
+  review_of: null,
 };
 
 function turn(t: Partial<Turn> & Pick<Turn, "id" | "idx" | "role" | "content">): Turn {
@@ -105,6 +107,7 @@ const tTool: TraceDetail = {
       created_at: NOW,
     },
   },
+  review_of: {},
 };
 
 // ── Trace 2: an assistant turn with mixed-parts content ──
@@ -125,6 +128,7 @@ const tParts: TraceDetail = {
   ],
   annotations: {},
   suggestions: {},
+  review_of: {},
 };
 
 // ── Trace 3: an HTML document (sandbox proof: the inline script must not run) ──
@@ -141,6 +145,7 @@ const tHtml: TraceDetail = {
   },
   annotations: {},
   suggestions: {},
+  review_of: {},
 };
 
 // ── Trace 5: a markdown document, trace-level labeling ──
@@ -161,6 +166,7 @@ const tMarkdown: TraceDetail = {
   },
   annotations: {},
   suggestions: {},
+  review_of: {},
 };
 
 // ── Trace 4: 300 turns, to exercise virtualization ──
@@ -187,6 +193,7 @@ function bigTrace(): TraceDetail {
     turns,
     annotations: {},
     suggestions: {},
+    review_of: {},
   };
 }
 

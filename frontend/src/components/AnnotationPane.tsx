@@ -15,7 +15,9 @@ export function AnnotationPane() {
   }
 
   const existing = trace.annotations[activeTarget.id];
-  const showSuggestion = !existing && !!state.prefillModel;
+  const isReview = session.mode === "review";
+  const judge = trace.review_of?.[activeTarget.id];
+  const showSuggestion = !isReview && !existing && !!state.prefillModel;
   const savedStatus = commitPending ? "saving" : existing ? "saved" : "idle";
   const targetLabel =
     activeTarget.type === "trace" ? "trace" : `turn #${activeTarget.turnIdx}`;
@@ -26,12 +28,38 @@ export function AnnotationPane() {
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           target: {targetLabel}
         </span>
-        {showSuggestion && (
+        {isReview ? (
           <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
-            ✦ suggested by {state.prefillModel}
+            {existing ? "reviewed" : `reviewing ${session.review_of}`}
           </span>
+        ) : (
+          showSuggestion && (
+            <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
+              ✦ suggested by {state.prefillModel}
+            </span>
+          )
         )}
       </div>
+
+      {isReview && judge && (
+        <div className="mb-4 rounded-md border border-indigo-200 bg-indigo-50/50 p-3 dark:border-indigo-900/50 dark:bg-indigo-900/20">
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+            {session.review_of} predicted
+          </div>
+          <dl className="space-y-1 text-sm">
+            {session.fields.map((f) => {
+              const v = judge.values[f.name];
+              if (v === undefined || (Array.isArray(v) && v.length === 0)) return null;
+              return (
+                <div key={f.name} className="flex gap-2">
+                  <dt className="shrink-0 text-slate-500 dark:text-slate-400">{f.label}:</dt>
+                  <dd className="min-w-0 font-medium">{Array.isArray(v) ? v.join(", ") : v}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        </div>
+      )}
 
       <div className="flex-1 space-y-4">
         {session.fields.map((f) => (
@@ -58,7 +86,7 @@ export function AnnotationPane() {
           onClick={() => ctl.commit()}
           className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
         >
-          Enter · commit ▸ next
+          {isReview ? "Enter · approve ▸ next" : "Enter · commit ▸ next"}
         </button>
         <button
           type="button"

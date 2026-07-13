@@ -57,6 +57,15 @@ class SuggestConfig(BaseModel):
     instructions: str | None = None
 
 
+class ReviewConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Annotator name whose labels are being reviewed (the judge, e.g. "gpt-4o").
+    of: str
+    # Key in each source line holding that annotator's values dict.
+    labels_from: str = "judge"
+
+
 class RawConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -69,6 +78,7 @@ class RawConfig(BaseModel):
     fields: list[PresetRef | FieldDef] | None = None
     llm: LLMConfig | None = None
     suggest: SuggestConfig | None = None
+    review: ReviewConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +90,8 @@ class CliArgs:
     shuffle: bool | None = None
     db: Path | None = None
     yes: bool = False
+    review_of: str | None = None
+    review_labels_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,3 +106,7 @@ class ResolvedTaskConfig:
     data_path: Path
     llm: LLMConfig | None
     suggest_instructions: str | None
+    # Review mode: the annotator whose labels are being reviewed (None = normal labeling),
+    # and the source-line key those labels are read from.
+    review_of: str | None = None
+    review_labels_from: str = "judge"

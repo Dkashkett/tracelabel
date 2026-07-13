@@ -49,10 +49,19 @@ class LabelingService:
             annotator=self._config.annotator,
             schema_hash=self._config.schema_hash,
             shuffle=self._config.shuffle,
+            mode="review" if self._config.review_of else "labeling",
+            review_of=self._config.review_of,
         )
 
+    def _counts(self) -> dict[str, tuple[int, int, int]]:
+        if self._config.review_of:
+            return self._annotations.review_counts(
+                self._config.name, self._config.review_of, self._config.annotator
+            )
+        return self._annotations.target_counts(self._task(), self._config.annotator)
+
     def queue(self) -> list[QueueEntry]:
-        counts = self._annotations.target_counts(self._task(), self._config.annotator)
+        counts = self._counts()
         entries: list[QueueEntry] = []
         for position, trace_id in enumerate(self._queue):
             target_count, labeled_count, skipped_count = counts.get(trace_id, (0, 0, 0))
@@ -87,6 +96,16 @@ class LabelingService:
             str(row["target_id"]): self._suggestion_out(row)
             for row in self._annotations.suggestions_for_trace(self._config.name, trace_id)
         }
+        review_of = {}
+        if self._config.review_of:
+            review_of = {
+                str(row["target_id"]): self._annotation_out(row)
+                for row in self._annotations.annotations_for_trace(
+                    self._config.name,
+                    self._config.review_of,
+                    trace_id,
+                )
+            }
         return TraceDetail(
             trace=TraceInfo(
                 id=trace["id"],
@@ -97,6 +116,7 @@ class LabelingService:
             document=document,
             annotations=annotations,
             suggestions=suggestions,
+            review_of=review_of,
         )
 
     def put_annotation(self, annotation: AnnotationIn) -> AnnotationOut:
@@ -115,7 +135,7 @@ class LabelingService:
         return self._annotation_out(row)
 
     def progress(self) -> Progress:
-        counts = self._annotations.target_counts(self._task(), self._config.annotator)
+        counts = self._counts()
         queue_set = set(self._queue)
         scoped = [count for trace_id, count in counts.items() if trace_id in queue_set]
         return Progress(

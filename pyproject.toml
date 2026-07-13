@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracelabel"
-version = "0.2.0"
-description = "Local-first, zero-config labeling — keyboard-fast, no accounts, no server."
+version = "0.3.0"
+description = "Local-first, lightweight labeling — keyboard-fast, no accounts, no server."
 readme = "README.md"
 authors = [{ name = "Daniel Kashkett" }]
 requires-python = ">=3.10"

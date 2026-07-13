@@ -23,6 +23,7 @@ from tracelabel.db.traces import ConflictPolicy
 from tracelabel.errors import EnvError, UserError
 from tracelabel.exporting.service import ExportFormat, ExportService
 from tracelabel.imports.adapters.base import AdapterRegistry
+from tracelabel.imports.labels import LabelIngestService
 from tracelabel.imports.service import ImportService, ImportSummary
 from tracelabel.suggestions.client import LiteLLMClient
 from tracelabel.suggestions.service import SuggestionService, SuggestionSummary
@@ -116,9 +117,18 @@ class ServeCommand:
                 )
                 print_import_summary(config.data_path, summary)
                 database.tasks.open(config, assume_yes=assume_yes)
-                queue = database.tasks.build_queue(
-                    config.name, None if serve_all else summary.trace_ids
-                )
+                queue_scope = None if serve_all else summary.trace_ids
+                if config.review_of is not None:
+                    labels = LabelIngestService(database.annotations).ingest(
+                        config.data_path, config
+                    )
+                    typer.echo(
+                        f"review · ingested {labels.ingested} '{config.review_of}' label(s) "
+                        "to review"
+                    )
+                    # review steps through judge-labeled traces only
+                    queue_scope = labels.trace_ids
+                queue = database.tasks.build_queue(config.name, queue_scope)
                 app = create_app(database, config, queue)
                 scope = session_scope_note(config.data_path, len(queue), serve_all)
                 typer.echo(

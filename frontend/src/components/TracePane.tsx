@@ -37,12 +37,13 @@ export function TracePane() {
     const el = parentRef.current;
     if (el) {
       const activeTurnIdx = groups[activeArrayIdx]?.turn.idx;
-      requestAnimationFrame(() => {
+      const frame = requestAnimationFrame(() => {
         el.querySelector<HTMLElement>(`[data-turn-idx="${activeTurnIdx}"]`)?.focus({
           preventScroll: true,
         });
         el.scrollBy?.({ top: -el.clientHeight / 3, behavior: "smooth" });
       });
+      return () => cancelAnimationFrame(frame);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeArrayIdx, trace.trace.id, turnLevel]);

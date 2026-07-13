@@ -1,6 +1,5 @@
 export type Theme = "light" | "dark";
 
-const AUTO_ADVANCE_KEY = "tracelabel.autoAdvance";
 const THEME_KEY = "tracelabel.theme";
 
 function read(key: string): string | null {
@@ -17,14 +16,6 @@ function write(key: string, value: string): void {
   } catch {
     // best-effort; a prefs write failing must never break labeling
   }
-}
-
-export function getAutoAdvance(): boolean {
-  return read(AUTO_ADVANCE_KEY) !== "0"; // ON by default (06 §2.2)
-}
-
-export function setAutoAdvance(on: boolean): void {
-  write(AUTO_ADVANCE_KEY, on ? "1" : "0");
 }
 
 export function getTheme(): Theme {
