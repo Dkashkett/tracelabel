@@ -194,6 +194,14 @@ class LabelingService:
             name=row["name"],
             labelable=(self._config.level == "turn" and row["role"] in self._config.label_roles),
             metadata=self._json_object(row["metadata"]),
+            span_id=row["span_id"],
+            parent_id=row["parent_id"],
+            agent=row["agent"],
+            kind=row["kind"],
+            started_at=row["started_at"],
+            duration_ms=row["duration_ms"],
+            status=row["status"],
+            status_message=row["status_message"],
         )
 
     @classmethod

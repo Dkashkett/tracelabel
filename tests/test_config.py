@@ -166,6 +166,13 @@ def test_resolution_defaults(monkeypatch):
     assert cfg.annotator == "alice"
 
 
+def test_label_roles_reject_event():
+    raw = RawConfig(data=Path("traces.jsonl"), label_roles=["assistant", "event"])
+    with pytest.raises(UserError) as excinfo:
+        resolve(raw, CliArgs())
+    assert "event" in str(excinfo.value)
+
+
 def test_raw_config_for_target_single_document_suffix_rejected(tmp_path):
     # a single document-extension file has no real use case; point at JSONL/directory instead.
     with pytest.raises(UserError) as ei:

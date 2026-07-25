@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { optionTone, toneSelectedClasses } from "@/lib/optionTone";
 import type { ResolvedField } from "@/api/types";
 
 export function OptionRow({
@@ -29,10 +30,11 @@ export function OptionRow({
       data-field-name={field.name}
       data-field-type="single_select"
       onKeyDown={onKeyDown}
-      className="flex flex-wrap gap-2 rounded outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+      className="flex flex-wrap gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
     >
       {options.map((opt, i) => {
         const selected = value === opt;
+        const tone = toneSelectedClasses[optionTone(opt)];
         return (
           <button
             key={opt}
@@ -41,17 +43,17 @@ export function OptionRow({
             aria-checked={selected}
             onClick={() => onSelect(opt)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+              "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all",
               selected
-                ? "border-sky-600 bg-sky-600 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
+                ? tone.button
+                : "border-line bg-surface-raised text-ink-muted hover:border-line-strong hover:bg-surface",
             )}
           >
             {i < 9 && (
               <kbd
                 className={cn(
-                  "rounded px-1 text-[10px] font-semibold",
-                  selected ? "bg-sky-700 text-sky-100" : "bg-slate-200 text-slate-500 dark:bg-slate-700",
+                  "rounded px-1 text-[10px] font-semibold tabular-nums",
+                  selected ? tone.kbd : "bg-surface-inset text-ink-faint",
                 )}
               >
                 {i + 1}

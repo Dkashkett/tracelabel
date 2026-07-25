@@ -80,8 +80,8 @@ def test_open_db_pragmas(conn):
 # ── DB-02 ───────────────────────────────────────────────────────────────────
 
 
-def test_migration_001_schema(conn):
-    assert conn.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+def test_migration_002_schema(conn):
+    assert conn.connection.execute("PRAGMA user_version").fetchone()[0] == 2
     tables = {
         r[0] for r in conn.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
@@ -98,12 +98,29 @@ def test_migration_001_schema(conn):
     )
     with pytest.raises(sqlite3.IntegrityError):
         conn.connection.execute(
-            "INSERT INTO turns VALUES ('t#0','t',0,'bogus','x','text',NULL,NULL,NULL,'{}',NULL)"
+            "INSERT INTO turns (id, trace_id, idx, role, content, content_type, metadata) "
+            "VALUES ('t#0','t',0,'bogus','x','text','{}')"
         )
     # "document" was removed from the message Role enum; a turn may never carry it.
     with pytest.raises(sqlite3.IntegrityError):
         conn.connection.execute(
-            "INSERT INTO turns VALUES ('t#0','t',0,'document','x','text',NULL,NULL,NULL,'{}',NULL)"
+            "INSERT INTO turns (id, trace_id, idx, role, content, content_type, metadata) "
+            "VALUES ('t#0','t',0,'document','x','text','{}')"
+        )
+    # "event" is a valid role (CTF v2), but requires a valid kind.
+    conn.connection.execute(
+        "INSERT INTO turns (id, trace_id, idx, role, content, content_type, metadata, kind) "
+        "VALUES ('t#0','t',0,'event','','text','{}','handoff')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.connection.execute(
+            "INSERT INTO turns (id, trace_id, idx, role, content, content_type, metadata, kind) "
+            "VALUES ('t#1','t',1,'event','','text','{}','bogus')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.connection.execute(
+            "INSERT INTO turns (id, trace_id, idx, role, content, content_type, metadata, status) "
+            "VALUES ('t#2','t',2,'user','x','text','{}','bogus')"
         )
     # content_type CHECK on traces accepts the four document content types.
     conn.connection.execute(
@@ -133,6 +150,20 @@ def test_newer_db_refused(tmp_path):
     msg = str(ei.value)
     assert "newer" in msg
     assert "pip install -U tracelabel" in msg
+
+
+def test_v1_db_refused_clean_break(tmp_path):
+    path = default_db_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = sqlite3.connect(path)
+    legacy.execute("PRAGMA user_version = 1")
+    legacy.commit()
+    legacy.close()
+    with pytest.raises(EnvError) as ei:
+        Database(path)
+    msg = str(ei.value).lower()
+    assert "older tracelabel" in msg
+    assert "re-import" in msg
 
 
 # ── DB-04 ───────────────────────────────────────────────────────────────────

@@ -15,6 +15,11 @@ uvx tracelabel demo
 Press `j` to jump to the first labelable turn, `1` to mark it **pass**, `Enter` to commit and
 advance. That's the whole loop.
 
+Multi-agent traces get real structure, not a flat message list: an outline navigator (`o`) for
+jumping between agents/tool calls/handoffs, collapsible tool-call cards with duration and error
+state, agent-colored sections, and handoff dividers — imported from OTEL GenAI spans, Google ADK
+sessions, or Datadog LLM-Observability spans (see [Data formats](#data-formats)).
+
 ## Install
 
 ```bash
@@ -51,10 +56,10 @@ spec: [`docs/trace-format.md`](docs/trace-format.md)). You rarely need to produc
 adapter, in priority order:
 
 ```
-ctf  →  adk  →  datadog  →  documents  →  loose
+ctf  →  otel  →  adk  →  datadog  →  documents  →  loose
 ```
 
-Force a specific one with `--from ctf|adk|datadog|documents|loose`. Input can be a `.jsonl` file
+Force a specific one with `--from ctf|otel|adk|datadog|documents`. Input can be a `.jsonl` file
 (one JSON value per line), a single JSON object, a top-level JSON array, or — for documents — a
 folder.
 
@@ -62,8 +67,10 @@ folder.
 
 One trace per line: an object with an optional `id` and a required `messages` array. This is the
 tracelabel trace format itself — what every other adapter converts *into*. Roles are
-`system | user | assistant | tool` (plus `document` for single-message document traces).
-Assistant turns may carry `tool_calls`; `tool` turns carry a `tool_call_id`:
+`system | user | assistant | tool`, plus `event` for non-conversational structure (agent
+handoffs, retrieval spans, guardrail checks — never labelable; see
+[`docs/trace-format.md`](docs/trace-format.md) §3.1). Assistant turns may carry `tool_calls`;
+`tool` turns carry a `tool_call_id`:
 
 ```json
 {"id": "demo_001", "metadata": {"model": "gpt-4o", "env": "prod"}, "messages": [
@@ -121,22 +128,40 @@ The `id` is the filename, the extension sets `content_type`, and the real path i
 `metadata.path`. Other file types (`.json`, `.jsonl`, hidden files, unknown extensions) are
 skipped with a summary note.
 
+### OTEL GenAI spans
+
+An **OpenTelemetry trace export** — either a full OTLP/JSON envelope (`resourceSpans →
+scopeSpans → spans`) or a bare list of spans — following the (pre-stable) [GenAI semantic
+conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). This is the most
+framework-agnostic path in: anything that exports OTel GenAI spans (a growing set of agent SDKs
+and frameworks) gets tool-call, agent-handoff, and retrieval structure without a
+framework-specific adapter. Spans are grouped by trace id and ordered depth-first by the span
+tree; `chat`/`generate_content` spans become turns, `execute_tool` spans become `tool_calls` +
+`tool` turns (with duration/error status), and `invoke_agent` spans mark agent boundaries whose
+name propagates onto every descendant row. See [Exporting from OTEL](#exporting-from-otel).
+
 ### ADK sessions
 
 An exported **Google ADK session envelope** — `{"events": […], "appName"?, "userId"?, "id"?}` —
-maps to one trace. Each event's `author` becomes a `user` or `assistant` turn (with the author
-name as a chip, so multi-agent sessions stay legible), and `function_call` / `function_response`
-parts become `tool_calls` + `tool` turns. See [Exporting from ADK](#exporting-from-adk) for how
-to produce this file.
+maps to one trace. Each event's `author` becomes a `user` or `assistant` turn tagged with that
+agent (agent-colored section headers + chips in the UI, so multi-agent sessions stay legible),
+`function_call` / `function_response` parts become `tool_calls` + `tool` turns, and a
+`transfer_to_agent` call becomes a handoff divider between agent sections. See [Exporting from
+ADK](#exporting-from-adk) for how to produce this file.
 
 ### Datadog LLM-Observability spans
 
 An exported **JSON/JSONL of Datadog LLM-Observability spans** — each span carrying `trace_id`,
 `span_id`, `start_ns`, `duration`, and a `meta` object with a `kind`. Spans are grouped by
 `trace_id` and ordered by `start_ns` into one trace each: `llm` spans' input/output messages
-become turns, `tool` spans become `tool_calls` + `tool` turns. See
+become turns, `tool` spans become `tool_calls` + `tool` turns (duration/error status attached),
+and `workflow`/`agent` spans mark agent boundaries. See
 [Exporting from Datadog](#exporting-from-datadog) for how to produce this file. (File import
 only — there is no live Datadog API sync.)
+
+Spans that aren't chat/tool/agent (raw `http`, `db.client`, etc.) are folded into trace metadata
+by default on both the OTEL and Datadog adapters; pass `--include-all-spans` to keep them as
+visible (never-labelable) event rows instead.
 
 ## Commands
 
@@ -152,16 +177,18 @@ only — there is no live Datadog API sync.)
 **`import` vs `serve`** — both ingest through the same importer, but:
 
 - **`import`** loads data and exits. It exposes the full ingest surface: `--from
-  auto|ctf|adk|datadog|documents`, `--on-conflict fail|skip`, `--skip-invalid` (skip malformed
-  lines instead of failing), `--as-documents`. It does **not** create a task or start a server.
+  auto|ctf|otel|adk|datadog|documents`, `--on-conflict fail|skip`, `--skip-invalid` (skip malformed
+  lines instead of failing), `--as-documents`, `--include-all-spans` (keep non-chat/tool/agent
+  spans as visible event rows instead of folding them into metadata; OTEL and Datadog adapters
+  only). It does **not** create a task or start a server.
 - **`serve`** loads data *and* opens/creates a task, builds the labeling queue, and starts the
   web UI. It fixes `on-conflict=fail` and doesn't expose `--from`/`--skip-invalid` — so when your
   data isn't already in the native format, `import` it first, then `serve --all` to label everything in the db.
 
 Useful `serve` flags: `--task NAME`, `--level turn|trace`, `--all` (label the whole db, not just
-the file you served), `--review-of NAME` / `--labels-from KEY` (review an LLM judge's existing
-labels — see [Reviewing an LLM judge's labels](#reviewing-an-llm-judges-labels)), `--port`
-(default `8377`), `--no-browser`, `--shuffle/--no-shuffle`. The server binds `127.0.0.1` only.
+the file you served), `--include-all-spans`, `--review-of NAME` / `--labels-from KEY` (review an
+LLM judge's existing labels — see [Reviewing an LLM judge's labels](#reviewing-an-llm-judges-labels)),
+`--port` (default `8377`), `--no-browser`, `--shuffle/--no-shuffle`. The server binds `127.0.0.1` only.
 
 ## Common workflows
 
@@ -244,6 +271,36 @@ df.groupby("task")["values"].apply(lambda v: (pd.json_normalize(v)["verdict"] ==
 
 See [`docs/pandas.md`](docs/pandas.md) for a groupby recipe per field type (`single_select`,
 `multi_select`, `text`).
+
+## Exporting from OTEL
+
+The `otel` adapter wants an OTLP/JSON trace export with [GenAI semantic-convention
+attributes](https://opentelemetry.io/docs/specs/semconv/gen-ai/) — an OTel collector's
+[file exporter](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/fileexporter)
+pointed at your agent process is the usual path, or your SDK's own OTLP/JSON writer. One trace
+export (a `resourceSpans` envelope, or a bare list of spans) can contain many traces —
+`tracelabel` groups spans by `traceId` for you:
+
+```yaml
+# OTel collector config.yaml — write spans to a file instead of (or alongside) a real backend
+exporters:
+  file:
+    path: otel-spans.json
+service:
+  pipelines:
+    traces:
+      exporters: [file]
+```
+
+```bash
+tracelabel serve otel-spans.json        # or: tracelabel import … --from otel
+```
+
+The adapter recognizes `gen_ai.operation.name` in `chat`/`generate_content`/`text_completion`
+(conversation turns, from `gen_ai.input.messages`/`gen_ai.output.messages` attributes or the
+older span-event style), `execute_tool` (tool calls + results), `invoke_agent` (agent
+boundaries, named by `gen_ai.agent.name`), and retrieval/embedding spans. Everything else is
+kept in `raw` unless you pass `--include-all-spans`.
 
 ## Exporting from ADK
 

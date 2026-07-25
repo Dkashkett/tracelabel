@@ -61,11 +61,17 @@ class ConfigResolver:
                 f"'{annotator}' (else the review would overwrite the labels being reviewed). "
                 "Pass a different --annotator."
             )
+        label_roles = raw.label_roles or ["assistant"]
+        if "event" in label_roles:
+            raise UserError(
+                "label_roles may not contain 'event' — event rows are structural "
+                "(handoffs, spans, agent boundaries) and cannot be labeled."
+            )
         return ResolvedTaskConfig(
             name=cli.task or raw.task or default_task_name(data),
             level=cli.level or raw.level,
             fields=[canonical_field_dict(field) for field in fields],
-            label_roles=raw.label_roles or ["assistant"],
+            label_roles=label_roles,
             shuffle=cli.shuffle if cli.shuffle is not None else raw.shuffle,
             annotator=annotator,
             schema_hash=schema_hash(fields),

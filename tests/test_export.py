@@ -242,6 +242,51 @@ def test_joined_trace_level(conn, tmp_path):
     ]
 
 
+def test_joined_trace_level_includes_structural_fields_when_present(conn, tmp_path):
+    conn.traces.import_trace(
+        {
+            "id": "t_struct",
+            "messages": [
+                {
+                    "role": "event",
+                    "content": "",
+                    "kind": "handoff",
+                    "agent": "orchestrator",
+                    "span_id": "s0",
+                    "duration_ms": 3.5,
+                    "status": "ok",
+                },
+                {"role": "user", "content": "hi"},
+            ],
+        },
+        "jsonl",
+    )
+    cfg = make_cfg(tmp_path, name="structtask", level="trace")
+    conn.tasks.open(cfg, assume_yes=True)
+    conn.annotations.upsert_annotation(
+        task="structtask",
+        target_type="trace",
+        target_id="t_struct",
+        status="labeled",
+        values={"verdict": "pass"},
+        annotator="alice",
+        schema_hash="h1",
+        prefill_model=None,
+    )
+    out = tmp_path / "out.jsonl"
+    export_annotations(conn, "structtask", "jsonl", joined=True, out=out)
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    event_message, user_message = rows[0]["messages"]
+    assert event_message["kind"] == "handoff"
+    assert event_message["agent"] == "orchestrator"
+    assert event_message["span_id"] == "s0"
+    assert event_message["duration_ms"] == 3.5
+    assert event_message["status"] == "ok"
+    # Null structural fields never appear in the reconstructed message.
+    assert "kind" not in user_message
+    assert "agent" not in user_message
+
+
 def test_joined_trace_level_document(conn, tmp_path):
     conn.traces.import_document(
         {

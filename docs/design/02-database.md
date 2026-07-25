@@ -33,15 +33,21 @@ def acquire_lock(project_dir):
     atexit(lock.unlink)
 ```
 
-## 2. Schema (DDL, migration 001)
+## 2. Schema (DDL, `_DDL_002` — schema v2)
+
+Schema v2 was a **clean break**, not a migration: rather than ALTER-ing v1's `turns` table
+in place, `db/migrations.py` replaced the whole DDL wholesale (§3). A v1 database is not
+upgraded — it's rejected with a re-import message, because CTF v2 (01) changes what a valid
+`turns.role` even is (`event` is new), and there is no lossless way to backfill the eight new
+structural columns for rows that were imported before they existed.
 
 ```sql
--- version: PRAGMA user_version = 1
+-- version: PRAGMA user_version = 2
 
 CREATE TABLE traces (
     id            TEXT PRIMARY KEY,            -- CTF trace/document id (user-provided, t_<hash32>, or d_<hash32>)
     content_hash  TEXT NOT NULL,               -- trace: sha256 of canonical_json(messages); document: sha256 of canonical_json({content, content_type})
-    source        TEXT,                        -- 'jsonl' | 'adk' | 'datadog' | 'documents' | ...
+    source        TEXT,                        -- 'jsonl' | 'adk' | 'datadog' | 'otel' | 'documents' | ...
     metadata      TEXT NOT NULL DEFAULT '{}',  -- JSON
     raw           TEXT,                        -- JSON passthrough, nullable
     imported_at   TEXT NOT NULL,               -- ISO-8601 UTC
@@ -54,17 +60,27 @@ CREATE TABLE traces (
 -- which insert path is used (import_trace vs import_document, §4), never mixed.
 
 CREATE TABLE turns (
-    id            TEXT PRIMARY KEY,            -- "{trace_id}#{idx}"
-    trace_id      TEXT NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
-    idx           INTEGER NOT NULL,            -- 0-based position
-    role          TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool')),
-    content       TEXT NOT NULL,               -- verbatim string, or JSON-serialized parts array
-    content_type  TEXT NOT NULL CHECK (content_type IN ('text','json','html','parts')),
-    tool_calls    TEXT,                        -- JSON array, nullable, assistant only
-    tool_call_id  TEXT,                        -- nullable, tool only
-    name          TEXT,
-    metadata      TEXT NOT NULL DEFAULT '{}',  -- JSON
-    raw           TEXT,
+    id              TEXT PRIMARY KEY,            -- "{trace_id}#{idx}"
+    trace_id        TEXT NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+    idx             INTEGER NOT NULL,            -- 0-based position
+    role            TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool','event')),
+    content         TEXT NOT NULL,               -- verbatim string, or JSON-serialized parts array
+    content_type    TEXT NOT NULL CHECK (content_type IN ('text','json','html','parts')),
+    tool_calls      TEXT,                        -- JSON array, nullable, assistant only
+    tool_call_id    TEXT,                        -- nullable, tool only
+    name            TEXT,
+    metadata        TEXT NOT NULL DEFAULT '{}',  -- JSON
+    raw             TEXT,
+    span_id         TEXT,                        -- CTF v2 (01 §3.2): source span/event id
+    parent_id       TEXT,                        -- presentation-only source hierarchy, no index
+    agent           TEXT,                        -- which agent/sub-agent produced this row
+    kind            TEXT CHECK (
+        kind IS NULL OR kind IN ('handoff','retrieval','agent','guardrail','span')
+    ),                                            -- required iff role='event', forbidden otherwise (enforced at import, not by CHECK)
+    started_at      TEXT,                         -- ISO-8601
+    duration_ms     REAL,
+    status          TEXT CHECK (status IS NULL OR status IN ('ok','error')),
+    status_message  TEXT,
     UNIQUE (trace_id, idx)
 );
 CREATE INDEX idx_turns_trace ON turns(trace_id, idx);
@@ -118,24 +134,36 @@ Notes:
 
 ## 3. Migrations
 
-`PRAGMA user_version` + tiny sequential Python migration scripts. Runs automatically on every
-db open (CLI and server). pip-upgraded users' existing dbs must survive.
+`PRAGMA user_version` gates a single upgrade function, run automatically on every db open (CLI
+and server):
 
 ```python
-MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [migrate_001_initial, ...]
+SCHEMA_VERSION = 2
 
 def upgrade(conn):
     v = conn.execute("PRAGMA user_version").fetchone()[0]
-    if v > len(MIGRATIONS):
-        die(f"Database schema v{v} is newer than this tracelabel ({len(MIGRATIONS)}). Upgrade: pip install -U tracelabel")
-    for i in range(v, len(MIGRATIONS)):
-        with conn:                       # each migration is one transaction
-            MIGRATIONS[i](conn)
-            conn.execute(f"PRAGMA user_version = {i + 1}")
+    if v == SCHEMA_VERSION:
+        return
+    if v == 0:                           # fresh db: create v2 wholesale
+        with conn:
+            conn.executescript(_DDL_002)
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        return
+    if v < SCHEMA_VERSION:                # v1 db: no in-place migration, by design
+        die("This database was created by an older tracelabel. Start a new project "
+            "directory and re-import your traces.")
+    die(f"Database schema v{v} is newer than this tracelabel ({SCHEMA_VERSION}). "
+        "Upgrade: pip install -U tracelabel")
 ```
 
-Rules: migrations are append-only, never edited after release; each must be idempotent-safe to
-review; destructive changes (dropping columns) require a copy-table migration.
+The v1→v2 bump (CTF v2, 01) was a deliberate **clean break**, not an ALTER-table migration:
+v1's `turns.role` CHECK doesn't allow `'event'`, and there's no lossless way to backfill eight
+new structural columns for rows imported before they existed. A v1 database left on disk is
+refused outright rather than silently missing new fields — the fix is a fresh project directory
+and a re-import (07 §6), which is cheap since imports are idempotent by content hash (§4).
+There is exactly one migration path (0 → 2) today; a future v3 would likely restore the
+append-only ladder this replaces, adding a real `migrate_002_to_003` step rather than another
+clean break, once there's a real installed base on v2 to protect.
 
 ## 4. Idempotent import (normative pseudocode)
 
@@ -161,13 +189,23 @@ def import_trace(conn, ctf: dict, source: str, on_conflict: str = "fail"):
                      (tid, chash, source, json(ctf.get("metadata", {})),
                       json_or_null(ctf.get("raw")), now_iso()))
         for i, m in enumerate(ctf["messages"]):
-            conn.execute("INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                         (f"{tid}#{i}", tid, i, m["role"],
-                          serialize_content(m["content"]),          # verbatim; parts → json string
-                          content_type_of(m["content"]),
-                          json_or_null(m.get("tool_calls")), m.get("tool_call_id"),
-                          m.get("name"), json(m.get("metadata", {})),
-                          json_or_null(m.get("raw"))))
+            conn.execute("""
+                INSERT INTO turns (
+                    id, trace_id, idx, role, content, content_type, tool_calls, tool_call_id,
+                    name, metadata, raw, span_id, parent_id, agent, kind, started_at,
+                    duration_ms, status, status_message
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                f"{tid}#{i}", tid, i, m["role"],
+                serialize_content(m["content"]),          # verbatim; parts → json string
+                content_type_of(m["content"]),
+                json_or_null(m.get("tool_calls")), m.get("tool_call_id"),
+                m.get("name"), json(m.get("metadata", {})),
+                json_or_null(m.get("raw")),
+                m.get("span_id"), m.get("parent_id"), m.get("agent"), m.get("kind"),
+                m.get("started_at"), m.get("duration_ms"), m.get("status"),
+                m.get("status_message"),
+            ))
     return "inserted"
 ```
 

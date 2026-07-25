@@ -13,6 +13,7 @@ DEFAULT_FIELDS = [
         label="Reasoning",
         type="text",
         placeholder="Why is this a pass or fail?",
+        required=True,
     ),
 ]
 

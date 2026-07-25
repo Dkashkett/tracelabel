@@ -1,10 +1,20 @@
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from typing import Any, cast
 
 from tracelabel.ctf.hashing import canonical_json, sha256_hex
 from tracelabel.ctf.models import Json
 
-_SPAN_MAPPED_META = {"kind", "name", "input", "output"}
+_SPAN_MAPPED_META = {"kind", "name", "input", "output", "error.message", "error.type"}
+_EVENT_KIND_MAP = {
+    "workflow": "agent",
+    "agent": "agent",
+    "retrieval": "retrieval",
+    "embedding": "retrieval",
+}
+# Kinds that mark an agent/orchestration boundary; their `name` becomes the `agent`
+# on every descendant row (nearest enclosing span wins).
+_AGENT_KINDS = {"workflow", "agent"}
 
 
 def _is_span(value: Any) -> bool:
@@ -43,12 +53,43 @@ def _raw_json_string(value: Any) -> str:
     return canonical_json(value)
 
 
-def _span_metadata(span: Json) -> Json:
-    return {
-        key: span.get(key)
-        for key in ("span_id", "trace_id", "start_ns", "duration")
-        if span.get(key) is not None
-    }
+def _started_at(span: Json) -> str | None:
+    start_ns = span.get("start_ns")
+    if not isinstance(start_ns, int | float):
+        return None
+    seconds = start_ns / 1_000_000_000
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _duration_ms(span: Json) -> float | None:
+    duration = span.get("duration")
+    if not isinstance(duration, int | float):
+        return None
+    return duration / 1_000_000
+
+
+def _status(span: Json, metadata: Json) -> tuple[str | None, str | None]:
+    error_message = metadata.get("error.message")
+    if span.get("error") or error_message or metadata.get("error.type"):
+        return "error", error_message if isinstance(error_message, str) else None
+    return None, None
+
+
+def _common_fields(span: Json) -> Json:
+    common: Json = {}
+    span_id = span.get("span_id")
+    if span_id is not None:
+        common["span_id"] = span_id
+    parent_id = span.get("parent_id")
+    if parent_id is not None:
+        common["parent_id"] = parent_id
+    started_at = _started_at(span)
+    if started_at is not None:
+        common["started_at"] = started_at
+    duration_ms = _duration_ms(span)
+    if duration_ms is not None:
+        common["duration_ms"] = duration_ms
+    return common
 
 
 def _content_key(role: Any, content: Any) -> str:
@@ -62,8 +103,32 @@ def _tool_value(metadata: Json, side: str) -> Any:
     return block
 
 
+def _agent_for(
+    span_id: Any, parent_of: dict[Any, Any], agent_name_of: dict[Any, str]
+) -> str | None:
+    current = span_id
+    seen: set[Any] = set()
+    while current is not None and current not in seen:
+        seen.add(current)
+        if current in agent_name_of:
+            return agent_name_of[current]
+        current = parent_of.get(current)
+    return None
+
+
 def _trace_from_spans(trace_id: str, spans: list[Json]) -> Json:
     ordered_spans = sorted(spans, key=lambda span: span.get("start_ns", 0))
+
+    parent_of: dict[Any, Any] = {}
+    agent_name_of: dict[Any, str] = {}
+    for span in ordered_spans:
+        span_id = span.get("span_id")
+        if span_id is not None and span.get("parent_id") is not None:
+            parent_of[span_id] = span["parent_id"]
+        metadata = span.get("meta") or {}
+        if metadata.get("kind") in _AGENT_KINDS and span_id is not None:
+            agent_name_of[span_id] = str(metadata.get("name") or span.get("name") or span_id)
+
     messages: list[Json] = []
     seen: set[str] = set()
     unmapped_metadata: Json = {}
@@ -71,7 +136,10 @@ def _trace_from_spans(trace_id: str, spans: list[Json]) -> Json:
     for span in ordered_spans:
         metadata = span.get("meta") or {}
         kind = metadata.get("kind")
-        span_metadata = _span_metadata(span)
+        common = _common_fields(span)
+        status, status_message = _status(span, metadata)
+        agent = _agent_for(span.get("span_id"), parent_of, agent_name_of)
+
         if kind == "tool":
             call_id = span.get("span_id") or "call_" + sha256_hex(canonical_json(span))[:16]
             name = metadata.get("name") or span.get("name")
@@ -85,18 +153,25 @@ def _trace_from_spans(trace_id: str, spans: list[Json]) -> Json:
                 "content": "",
                 "tool_calls": [call],
             }
-            if span_metadata:
-                call_message["metadata"] = span_metadata
+            if agent is not None:
+                call_message["agent"] = agent
             messages.append(call_message)
+            # Duration/status live on the result row: the frontend derives a tool
+            # interaction's duration and status from its paired result turn.
             tool_message: Json = {
                 "role": "tool",
                 "tool_call_id": call_id,
                 "content": _raw_json_string(_tool_value(metadata, "output")),
+                **common,
             }
             if name is not None:
                 tool_message["name"] = name
-            if span_metadata:
-                tool_message["metadata"] = span_metadata
+            if agent is not None:
+                tool_message["agent"] = agent
+            if status is not None:
+                tool_message["status"] = status
+                if status_message is not None:
+                    tool_message["status_message"] = status_message
             messages.append(tool_message)
         elif kind == "llm":
             for message in (metadata.get("input") or {}).get("messages", []) or []:
@@ -113,10 +188,33 @@ def _trace_from_spans(trace_id: str, spans: list[Json]) -> Json:
                 output_message: Json = {
                     "role": message.get("role"),
                     "content": message.get("content"),
+                    **common,
                 }
-                if span_metadata:
-                    output_message["metadata"] = span_metadata
+                if agent is not None:
+                    output_message["agent"] = agent
+                if status is not None:
+                    output_message["status"] = status
+                    if status_message is not None:
+                        output_message["status_message"] = status_message
                 messages.append(output_message)
+        elif kind in _EVENT_KIND_MAP:
+            event: Json = {
+                "role": "event",
+                "content": "",
+                "kind": _EVENT_KIND_MAP[kind],
+                "name": metadata.get("name") or span.get("name") or kind,
+                **common,
+            }
+            if agent is not None:
+                event["agent"] = agent
+            if status is not None:
+                event["status"] = status
+                if status_message is not None:
+                    event["status_message"] = status_message
+            extra = {key: item for key, item in metadata.items() if key not in _SPAN_MAPPED_META}
+            if extra:
+                event["metadata"] = extra
+            messages.append(event)
         else:
             extra = {key: item for key, item in metadata.items() if key not in _SPAN_MAPPED_META}
             if extra:
@@ -130,6 +228,7 @@ def _trace_from_spans(trace_id: str, spans: list[Json]) -> Json:
 
 class DatadogAdapter:
     name = "datadog"
+    aggregates_input = True
 
     def sniff(self, first_values: list[Any]) -> bool:
         return bool(first_values) and _looks_datadog(first_values[0])

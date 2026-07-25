@@ -58,6 +58,7 @@ def serve(
     all_: Annotated[bool, typer.Option("--all")] = False,
     review_of: Annotated[str | None, typer.Option("--review-of")] = None,
     labels_from: Annotated[str | None, typer.Option("--labels-from")] = None,
+    include_all_spans: Annotated[bool, typer.Option("--include-all-spans")] = False,
 ) -> None:
     path = target_path(target)
     cli = CliArgs(
@@ -72,7 +73,16 @@ def serve(
     )
     config = ConfigResolver().resolve(raw_config_for_target(path), cli)
     project_dir = path if path.is_dir() else path.parent
-    ServeCommand().execute(config, project_dir, db, port, no_browser, yes, serve_all=all_)
+    ServeCommand().execute(
+        config,
+        project_dir,
+        db,
+        port,
+        no_browser,
+        yes,
+        serve_all=all_,
+        include_all_spans=include_all_spans,
+    )
 
 
 @app.command(name="import")
@@ -86,6 +96,7 @@ def import_(
     ] = OnConflictChoice.fail,
     skip_invalid: Annotated[bool, typer.Option("--skip-invalid")] = False,
     as_documents: Annotated[bool, typer.Option("--as-documents")] = False,
+    include_all_spans: Annotated[bool, typer.Option("--include-all-spans")] = False,
 ) -> None:
     ImportCommand().execute(
         Path(target),
@@ -94,6 +105,7 @@ def import_(
         on_conflict=on_conflict.value,
         skip_invalid=skip_invalid,
         as_documents=as_documents,
+        include_all_spans=include_all_spans,
     )
 
 

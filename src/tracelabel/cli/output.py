@@ -15,6 +15,11 @@ def print_import_summary(path: Path, summary: ImportSummary) -> None:
     )
     for note in summary.notes:
         typer.echo(f"  {note}")
+    if summary.skipped_conflict:
+        typer.echo(
+            "  some traces were imported with an older adapter; re-import under a new id "
+            "to see structure (span/agent/handoff fields)."
+        )
 
 
 def session_scope_note(data_path: Path, count: int, serve_all: bool) -> str:

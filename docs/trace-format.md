@@ -1,24 +1,25 @@
-# The tracelabel Trace Format (CTF v1)
+# The tracelabel Trace Format (CTF v2)
 
 This is the input contract for tracelabel. If your data is in this shape, `tracelabel serve
 traces.jsonl` just works. **The format is the API** — it is stable, versioned, and everything
-(the renderer, exports, and future span-offset tagging) is defined against it.
+(the renderer, exports, and structural fields like span/agent/timing) is defined against it.
 
 If your traces come from a known source, an adapter probably already produces this shape for you
-(e.g. Google ADK sessions, Datadog LLM-observability spans). This document describes the target
-that adapters emit and that you can write by hand.
+(Google ADK sessions, Datadog LLM-observability spans, OpenTelemetry GenAI spans). This document
+describes the target that adapters emit and that you can write by hand.
 
 ## 1. File shape
 
-A dataset is a UTF-8 **JSONL** file: one JSON object per line, one object per **trace**.
+A dataset is a UTF-8 **JSONL** file: one JSON object per line. Each line is **either** a
+conversation trace (§2, has `messages`) **or** a document (§5, has `content` and no `messages`).
 
 ## 2. Trace object
 
 ```jsonc
 {
-  "format_version": 1,            // OPTIONAL int, assumed 1 if absent. Rejected if > 1.
+  "format_version": 2,            // OPTIONAL int, assumed 1 if absent. Accepts 1 or 2.
   "id": "conv_8842",              // OPTIONAL string. See identity rules (§6).
-  "source": "adk",                // OPTIONAL string, set by adapters ("adk", "datadog", "jsonl", ...)
+  "source": "adk",                // OPTIONAL string, set by adapters ("adk", "datadog", "otel", "jsonl", ...)
   "metadata": { "env": "prod" },  // OPTIONAL object, arbitrary user metadata. Shown in the UI drawer.
   "messages": [ ... ],            // REQUIRED non-empty array of Message objects (§3)
   "raw": { ... }                  // OPTIONAL object. Adapter passthrough of unmapped source fields.
@@ -29,12 +30,14 @@ Unknown top-level keys are preserved into `raw` on import, warned once per file,
 
 ## 3. Message object
 
-Modeled on the OpenAI chat-completions message shape, plus a couple of tracelabel extensions.
+Modeled on the OpenAI chat-completions message shape, plus tracelabel extensions. The base shape
+below (v1) is a complete, valid message on its own — everything past it (v2) is optional and
+additive, for traces with agent/span structure worth showing.
 
 ```jsonc
 {
-  "role": "assistant",            // REQUIRED: "system" | "user" | "assistant" | "tool" | "document"
-  "content": <Content>,           // REQUIRED (may be "" only for assistant msgs that carry tool_calls)
+  "role": "assistant",            // REQUIRED: "system" | "user" | "assistant" | "tool" | "event"
+  "content": <Content>,           // REQUIRED (may be "" only for assistant msgs with tool_calls, or any event row)
   "tool_calls": [                 // OPTIONAL, assistant role only
     {
       "id": "call_abc",
@@ -43,8 +46,8 @@ Modeled on the OpenAI chat-completions message shape, plus a couple of tracelabe
     }
   ],
   "tool_call_id": "call_abc",     // OPTIONAL, tool role only; links a result to its call
-  "name": "search",               // OPTIONAL display name (tool name, agent name)
-  "metadata": { },                // OPTIONAL per-turn metadata (latency_ms, model, span_id, ...)
+  "name": "search",               // OPTIONAL display name (tool name, agent name, event name)
+  "metadata": { },                // OPTIONAL per-turn metadata (model, tokens_in, tokens_out, cost, ...)
   "raw": { }                      // OPTIONAL adapter passthrough
 }
 ```
@@ -60,11 +63,32 @@ message's `raw`, warned once per file, never fatal.
 | `user` | Human/user input | no |
 | `assistant` | Agent output (may carry `tool_calls`) | **yes** |
 | `tool` | Tool result; set `tool_call_id` when known | no |
-| `document` | Freeform text/JSON/HTML content in a single-turn trace | **yes** |
+| `event` | Structural span with no conversational content (§3.1) | **never** |
 
 Tool calls are represented **inline on the assistant turn** (`tool_calls`), with each result as a
 separate `tool` turn — never as synthetic assistant turns. This is the modeling decision agent
 traces live or die on.
+
+### 3.1 Structural fields (optional, all default to absent)
+
+Span-shaped things that aren't conversational content — handoffs between agents, retrieval
+spans, agent-invocation boundaries, guardrail checks — become `role: "event"` rows instead of
+being force-fit into a chat role. Any row (event or otherwise) may also carry:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `span_id` | str | Source span/event id |
+| `parent_id` | str | Parent span id (presentation-only, not queried) |
+| `agent` | str | Which agent/sub-agent produced this row |
+| `kind` | str | **Required** on `event` rows, forbidden elsewhere: `handoff` \| `retrieval` \| `agent` \| `guardrail` \| `span` |
+| `started_at` | str | ISO-8601 start time |
+| `duration_ms` | float | Duration in milliseconds |
+| `status` | `"ok"` \| `"error"` | Outcome |
+| `status_message` | str | Error detail |
+
+`kind: "handoff"` renders as a divider between agent sections in the UI; the rest surface as
+compact, expandable event rows. None of this is required — `{"messages":[{"role":"user",...}]}`
+is a complete trace either way, and a plain chat export never needs any of it.
 
 ## 4. Content
 
@@ -82,9 +106,8 @@ traces live or die on.
 ]
 ```
 
-Part types in v1: `text`, `json`, `html`. `json` carries `json_string` (a string, not a parsed
-object) so content is never reformatted. Images are out of scope for v1; the parts array is the
-extension point.
+Part types: `text`, `json`, `html`. `json` carries `json_string` (a string, not a parsed object)
+so content is never reformatted. Images are out of scope; the parts array is the extension point.
 
 ### Content-type detection (string content only)
 
@@ -101,17 +124,31 @@ def detect_content_type(s):
 
 Adapters may override detection explicitly. Parts arrays store `content_type = "parts"`.
 
-## 5. Documents (freeform text / JSON / HTML)
+## 5. Documents (freeform text / JSON / HTML / Markdown)
 
-A document is a trace with exactly one message of role `document`. `tracelabel import` also accepts
-bare documents and wraps them for you. This gives documents and conversations one rendering path
-and one labeling path.
+A document is its **own top-level shape**, not a message — a line with a `content` key and no
+`messages` key:
+
+```jsonc
+{
+  "id": "notes.md",                        // OPTIONAL
+  "content": "# Title\n\nBody text.",      // REQUIRED string, verbatim
+  "content_type": "markdown"               // OPTIONAL: "text" | "json" | "html" | "markdown"; defaults to "text"
+}
+```
+
+`tracelabel import` also accepts a bare string per line (`"Just a plain line of text."`, defaults
+to `content_type: "text"`) or a directory of `.md`/`.txt`/`.html` files, one document per file.
+A document has zero turns and labels at the trace level — there's nothing to break into turns.
 
 ## 6. Identity & hashing
 
 - **`trace.id`**: if the source provides `id`, it is used **verbatim**. Otherwise it is derived:
   `id = "t_" + sha256(canonical_json(messages))[:32]`.
 - **`content_hash`** (stored per trace, not part of the file): `sha256_hex(canonical_json(messages))`.
+  Structural fields (§3.1) participate like any other field — an adapter upgrade that adds them
+  changes the hash, so a re-import under the same id hits the ordinary content-conflict path
+  rather than silently changing what existing annotations reference.
 - **`canonical_json(x)`**: `json.dumps(x, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
   applied to the messages array after adapter mapping, before any storage.
 - **Turn id**: `"{trace_id}#{index}"` where `index` is the 0-based position in `messages`. This is
@@ -128,9 +165,10 @@ summary.
 
 1. `messages` present, non-empty; every element has a valid `role` and a `content` key.
 2. `tool_calls` only on `assistant`; `tool_call_id` only on `tool`.
-3. `content` may be `""` only when `tool_calls` is present and non-empty.
-4. A `document` role may only appear in single-message traces.
-5. `format_version`, if present, must equal 1.
+3. `kind` is required iff `role == "event"`; `kind`/`status`, if present, must be one of their
+   valid values (§3.1).
+4. `content` may be `""` only when `tool_calls` is present and non-empty, or on any `event` row.
+5. `format_version`, if present, must be 1 or 2.
 6. A duplicate `id` **within one file** is a hard error (it names both line numbers).
 
 ## 8. Examples
@@ -146,13 +184,27 @@ summary.
 ]}
 ```
 
+### Multi-agent trace with a handoff and a failed tool call
+
+```json
+{"id":"conv_2","format_version":2,"messages":[
+  {"role":"user","content":"Research fusion energy and summarize it."},
+  {"role":"assistant","agent":"Researcher","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"fusion energy\"}"}}]},
+  {"role":"tool","tool_call_id":"c1","name":"web_search","agent":"Researcher","duration_ms":812.0,"status":"error","status_message":"search backend timeout","content":"timeout after 5s"},
+  {"role":"event","kind":"handoff","content":"","agent":"Researcher","metadata":{"from":"Researcher","to":"Writer"}},
+  {"role":"assistant","agent":"Writer","content":"Fusion energy research continues to progress steadily."}
+]}
+```
+
 ### Freeform HTML document
 
 ```json
-{"id":"page_17","messages":[{"role":"document","content":"<html><body><h1>Refund policy</h1>...</body></html>"}]}
+{"id":"page_17","content":"<html><body><h1>Refund policy</h1>...</body></html>","content_type":"html"}
 ```
 
 ## 9. Versioning policy
 
-`format_version` bumps only on breaking changes. Additive optional fields do not bump it. The
-importer rejects versions greater than it knows with a "please upgrade tracelabel" message.
+`format_version` bumps only on breaking changes. Additive optional fields do not bump it — v2's
+eight structural fields didn't; v2 bumped because it adds a new *role* (`event`) that a v1-only
+reader wouldn't know how to handle. The importer rejects versions greater than it knows with a
+"please upgrade tracelabel" message.

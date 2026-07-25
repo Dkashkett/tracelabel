@@ -110,6 +110,102 @@ const tTool: TraceDetail = {
   review_of: {},
 };
 
+// ── Trace 1b: a multi-agent trace — agent sections, a handoff, tool durations, an error ──
+const tAgents: TraceDetail = {
+  trace: { id: "t_agents", source: "otel", metadata: { scenario: "research-and-write" } },
+  turns: [
+    turn({
+      id: "t_agents#0",
+      idx: 0,
+      role: "user",
+      content: "Research fusion energy breakthroughs and write a two-paragraph summary.",
+    }),
+    turn({
+      id: "t_agents#1",
+      idx: 1,
+      role: "event",
+      content: "",
+      kind: "agent",
+      name: "Orchestrator",
+      agent: "Orchestrator",
+      started_at: "2026-01-01T00:00:00Z",
+    }),
+    turn({
+      id: "t_agents#2",
+      idx: 2,
+      role: "assistant",
+      content: "",
+      agent: "Researcher",
+      tool_calls: [
+        { id: "call_search", name: "web_search", arguments: '{"query":"fusion energy breakthroughs"}' },
+      ],
+    }),
+    turn({
+      id: "t_agents#3",
+      idx: 3,
+      role: "tool",
+      content: '{"results":[{"title":"NIF achieves record fusion yield"}]}',
+      content_type: "json",
+      tool_call_id: "call_search",
+      name: "web_search",
+      agent: "Researcher",
+      span_id: "s1",
+      duration_ms: 812,
+      status: "ok",
+    }),
+    turn({
+      id: "t_agents#4",
+      idx: 4,
+      role: "assistant",
+      content: "Found several recent results on fusion breakthroughs.",
+      agent: "Researcher",
+    }),
+    turn({
+      id: "t_agents#5",
+      idx: 5,
+      role: "event",
+      content: "",
+      kind: "handoff",
+      name: "Researcher -> Writer",
+      agent: "Researcher",
+      metadata: { from: "Researcher", to: "Writer" },
+    }),
+    turn({
+      id: "t_agents#6",
+      idx: 6,
+      role: "assistant",
+      content: "",
+      agent: "Writer",
+      tool_calls: [{ id: "call_cite", name: "cite_sources", arguments: '{"urls":["https://example.com/nif"]}' }],
+    }),
+    turn({
+      id: "t_agents#7",
+      idx: 7,
+      role: "tool",
+      content: "timeout after 5s",
+      tool_call_id: "call_cite",
+      name: "cite_sources",
+      agent: "Writer",
+      span_id: "s2",
+      duration_ms: 145,
+      status: "error",
+      status_message: "citation service timed out",
+    }),
+    turn({
+      id: "t_agents#8",
+      idx: 8,
+      role: "assistant",
+      content:
+        "Recent fusion energy research has seen major milestones, including a record-setting " +
+        "yield from the National Ignition Facility.",
+      agent: "Writer",
+    }),
+  ],
+  annotations: {},
+  suggestions: {},
+  review_of: {},
+};
+
 // ── Trace 2: an assistant turn with mixed-parts content ──
 const tParts: TraceDetail = {
   trace: { id: "t_parts", source: "demo", metadata: {} },
@@ -199,12 +295,13 @@ function bigTrace(): TraceDetail {
 
 const traces: Record<string, TraceDetail> = {
   t_tool: tTool,
+  t_agents: tAgents,
   t_parts: tParts,
   t_html: tHtml,
   t_markdown: tMarkdown,
   t_big: bigTrace(),
 };
-const order = ["t_tool", "t_parts", "t_html", "t_markdown", "t_big"];
+const order = ["t_tool", "t_agents", "t_parts", "t_html", "t_markdown", "t_big"];
 
 function traceIdOf(targetId: string): string {
   return targetId.includes("#") ? targetId.slice(0, targetId.indexOf("#")) : targetId;

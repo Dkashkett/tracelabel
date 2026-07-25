@@ -1,33 +1,68 @@
-import { useState } from "react";
+import { useMemo } from "react";
+import { formatDuration } from "@/lib/format";
+import { deriveTraceStats } from "@/presentation/traceStats";
 import { useController } from "@/state/NavContext";
-import { getTheme, setTheme, type Theme } from "@/state/prefs";
+
+function TraceStatsChips() {
+  const { trace } = useController();
+  const stats = useMemo(() => deriveTraceStats(trace.turns), [trace.turns]);
+  if (trace.document) return null;
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-faint">
+      {stats.durationMs !== null && stats.durationMs > 0 && (
+        <span className="rounded-full bg-surface-raised px-2 py-0.5 tabular-nums">
+          {formatDuration(stats.durationMs)}
+        </span>
+      )}
+      <span className="rounded-full bg-surface-raised px-2 py-0.5 tabular-nums">
+        {stats.messageCount} msg
+      </span>
+      {stats.toolCallCount > 0 && (
+        <span className="rounded-full bg-surface-raised px-2 py-0.5 tabular-nums">
+          {stats.toolCallCount} tool
+        </span>
+      )}
+      {stats.agents.length > 0 && (
+        <span
+          className="truncate rounded-full bg-surface-raised px-2 py-0.5"
+          title={stats.agents.join(", ")}
+        >
+          {stats.agents.length} agent{stats.agents.length === 1 ? "" : "s"}
+        </span>
+      )}
+      {stats.errorCount > 0 && (
+        <span className="rounded-full bg-fail/15 px-2 py-0.5 font-medium tabular-nums text-fail">
+          {stats.errorCount} error{stats.errorCount === 1 ? "" : "s"}
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function Header() {
   const { session, completionCounts, canGoBack, goBack, setCheatOpen } = useController();
-  const [theme, setThemeState] = useState<Theme>(getTheme);
 
   const { total, labeled, skipped } = completionCounts;
   const done = labeled + skipped;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
-  function flipTheme() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    setThemeState(next);
-  }
-
   return (
-    <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
-      <span className="font-semibold">{session.task}</span>
-      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800">
+    <header className="flex items-center gap-4 border-b border-line bg-surface/80 px-5 py-2.5 text-sm text-ink backdrop-blur">
+      <span className="font-semibold tracking-tight">{session.task}</span>
+      <span className="rounded-full bg-surface-raised px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider text-ink-muted">
         {session.level}
       </span>
+      <TraceStatsChips />
 
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-          <div className="h-full bg-sky-500 transition-all" style={{ width: `${pct}%` }} />
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-raised">
+          <div
+            className="h-full rounded-full bg-accent transition-all duration-300"
+            style={{ width: `${pct}%` }}
+          />
         </div>
-        <span className="shrink-0 text-xs tabular-nums text-slate-500">
+        <span className="shrink-0 text-xs font-medium tabular-nums text-ink-muted">
           {done}/{total}
         </span>
       </div>
@@ -37,22 +72,14 @@ export function Header() {
         onClick={goBack}
         disabled={!canGoBack}
         title="back to previous target (u)"
-        className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800"
+        className="rounded-lg px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-40"
       >
         ← Back
       </button>
       <button
         type="button"
-        onClick={flipTheme}
-        className="rounded px-1.5 py-0.5 text-base hover:bg-slate-100 dark:hover:bg-slate-800"
-        title="toggle theme"
-      >
-        {theme === "dark" ? "☀" : "☾"}
-      </button>
-      <button
-        type="button"
         onClick={() => setCheatOpen(true)}
-        className="rounded px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+        className="rounded-lg px-2 py-1 text-ink-muted transition-colors hover:bg-surface-raised"
         title="keyboard shortcuts (?)"
       >
         ?

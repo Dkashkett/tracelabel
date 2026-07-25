@@ -128,6 +128,10 @@ function handleKeyDown(e: KeyboardEvent, ctl: Controller) {
     case "v":
       if (!e.repeat) ctl.setPeek(true);
       break;
+    case "x":
+      ctl.toggleToolCallsExpanded();
+      e.preventDefault();
+      break;
     case "Tab":
       cycleFields(ctl, e.shiftKey);
       e.preventDefault();

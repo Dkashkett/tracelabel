@@ -1,0 +1,79 @@
+{
+  "resourceSpans": [
+    {
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "aaaaaaaaaaaaaaaa",
+              "parentSpanId": "",
+              "name": "invoke_agent researcher",
+              "startTimeUnixNano": "1700000000000000000",
+              "endTimeUnixNano": "1700000005000000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "invoke_agent"}},
+                {"key": "gen_ai.agent.name", "value": {"stringValue": "Researcher"}}
+              ]
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "bbbbbbbbbbbbbbbb",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "name": "chat gpt-4o-mini",
+              "startTimeUnixNano": "1700000000100000000",
+              "endTimeUnixNano": "1700000001100000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "gen_ai.input.messages", "value": {"stringValue": "[{\"role\":\"user\",\"content\":\"What is the weather in Boston?\"}]"}},
+                {"key": "gen_ai.output.messages", "value": {"stringValue": "[{\"role\":\"assistant\",\"content\":\"Let me check that.\"}]"}},
+                {"key": "gen_ai.usage.input_tokens", "value": {"intValue": "12"}},
+                {"key": "gen_ai.usage.output_tokens", "value": {"intValue": "8"}}
+              ]
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "cccccccccccccccc",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "name": "execute_tool",
+              "startTimeUnixNano": "1700000001200000000",
+              "endTimeUnixNano": "1700000001500000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "execute_tool"}},
+                {"key": "gen_ai.tool.name", "value": {"stringValue": "get_weather"}},
+                {"key": "gen_ai.tool.call.id", "value": {"stringValue": "call_1"}},
+                {"key": "gen_ai.tool.call.arguments", "value": {"stringValue": "{\"city\":\"Boston\"}"}},
+                {"key": "gen_ai.tool.call.result", "value": {"stringValue": "{\"tempF\":52}"}}
+              ],
+              "status": {"code": 2, "message": "downstream timeout"}
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "dddddddddddddddd",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "name": "embeddings text-embedding-3-small",
+              "startTimeUnixNano": "1700000001600000000",
+              "endTimeUnixNano": "1700000001700000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "embeddings"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "text-embedding-3-small"}}
+              ]
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "eeeeeeeeeeeeeeee",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "name": "internal_cache_lookup",
+              "startTimeUnixNano": "1700000001650000000",
+              "endTimeUnixNano": "1700000001660000000",
+              "attributes": [
+                {"key": "cache.hit", "value": {"boolValue": false}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

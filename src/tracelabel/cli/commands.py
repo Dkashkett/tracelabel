@@ -106,12 +106,15 @@ class ServeCommand:
         no_browser: bool,
         assume_yes: bool,
         serve_all: bool = False,
+        include_all_spans: bool = False,
     ) -> None:
         path = database_path or default_db_path(project_dir)
         with self._database_factory(path) as database:
             port = self._server_runner.pick_port(requested_port)
             with self._lock_factory(project_dir, port):
-                summary = _import_service(database).import_file(
+                summary = _import_service(
+                    database, include_all_spans=include_all_spans
+                ).import_file(
                     config.data_path,
                     on_conflict="fail",
                 )
@@ -148,11 +151,12 @@ class ImportCommand:
         on_conflict: ConflictPolicy,
         skip_invalid: bool,
         as_documents: bool,
+        include_all_spans: bool = False,
     ) -> ImportSummary:
         project_dir = path if path.is_dir() else path.parent
         db_path = database_path or default_db_path(project_dir)
         with Database(db_path) as database:
-            summary = _import_service(database).import_file(
+            summary = _import_service(database, include_all_spans=include_all_spans).import_file(
                 path,
                 from_=from_,
                 on_conflict=on_conflict,
@@ -248,5 +252,9 @@ class DemoCommand:
         )
 
 
-def _import_service(database: Database) -> ImportService:
-    return ImportService(AdapterRegistry.default(), CtfValidator(), database.traces)
+def _import_service(database: Database, *, include_all_spans: bool = False) -> ImportService:
+    return ImportService(
+        AdapterRegistry.default(include_all_spans=include_all_spans),
+        CtfValidator(),
+        database.traces,
+    )

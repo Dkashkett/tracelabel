@@ -12,16 +12,16 @@ function Workspace() {
   const { isFinished } = useController();
 
   return (
-    <div className="flex h-screen flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex h-screen flex-col bg-bg text-ink">
       <Header />
       {isFinished ? (
         <FinishedScreen />
       ) : (
         <div className="flex min-h-0 flex-1">
-          <div className="min-w-0 basis-[65%]">
+          <div className="min-w-0 flex-1">
             <TracePane />
           </div>
-          <div className="min-w-0 basis-[35%] border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <div className="min-w-0 basis-[400px] border-l border-line bg-surface">
             <AnnotationPane />
           </div>
         </div>

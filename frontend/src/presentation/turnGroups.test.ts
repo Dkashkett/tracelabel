@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Turn } from "@/api/types";
-import { groupToolInteractions, rawTurnGroups } from "./turnGroups";
+import { groupToolInteractions, mergeSilentActivity } from "./turnGroups";
 
 function turn(overrides: Partial<Turn> & Pick<Turn, "id" | "idx" | "role">): Turn {
   return {
@@ -124,27 +124,132 @@ describe("groupToolInteractions", () => {
   });
 });
 
-describe("rawTurnGroups", () => {
-  it("preserves every source turn in exact order and leaves results standalone", () => {
+describe("groupToolInteractions activity cascade", () => {
+  it("folds a non-handoff event into the most recent assistant turn's activity, interleaved with tool calls by idx", () => {
     const assistant = turn({
       id: "t#0",
       idx: 0,
       role: "assistant",
       tool_calls: [{ id: "call_1", name: "search", arguments: "{}" }],
     });
-    const result = turn({
-      id: "t#1",
-      idx: 1,
-      role: "tool",
-      tool_call_id: "call_1",
+    const result = turn({ id: "t#1", idx: 1, role: "tool", tool_call_id: "call_1" });
+    const retrieval = turn({ id: "t#2", idx: 2, role: "event", kind: "retrieval" });
+
+    const groups = groupToolInteractions([assistant, result, retrieval]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].activity.map((a) => a.kind)).toEqual(["tool", "event"]);
+    expect(groups[0].activity[1]).toEqual({ kind: "event", turn: retrieval });
+  });
+
+  it("keeps a handoff event as its own top-level group, never folded into a cascade", () => {
+    const assistant = turn({ id: "t#0", idx: 0, role: "assistant" });
+    const handoff = turn({ id: "t#1", idx: 1, role: "event", kind: "handoff" });
+
+    const groups = groupToolInteractions([assistant, handoff]);
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#0", "t#1"]);
+    expect(groups[0].activity).toEqual([]);
+  });
+
+  it("keeps an orphan event (no preceding assistant turn) as its own top-level group", () => {
+    const retrieval = turn({ id: "t#0", idx: 0, role: "event", kind: "retrieval" });
+    const assistant = turn({ id: "t#1", idx: 1, role: "assistant" });
+
+    const groups = groupToolInteractions([retrieval, assistant]);
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#0", "t#1"]);
+  });
+});
+
+describe("mergeSilentActivity", () => {
+  it("folds a content-less, non-labelable assistant turn into the reply that follows", () => {
+    const call = turn({
+      id: "t#0",
+      idx: 0,
+      role: "assistant",
+      content: "",
+      labelable: false,
+      tool_calls: [{ id: "c", name: "search", arguments: "{}" }],
     });
-    const final = turn({ id: "t#2", idx: 2, role: "assistant" });
+    const result = turn({ id: "t#1", idx: 1, role: "tool", tool_call_id: "c" });
+    const reply = turn({ id: "t#2", idx: 2, role: "assistant", content: "here is the answer" });
 
-    const groups = rawTurnGroups([assistant, result, final]);
+    const groups = mergeSilentActivity(groupToolInteractions([call, result, reply]));
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#2"]);
+    expect(groups[0].activity).toHaveLength(1);
+    expect(groups[0].activity[0]).toEqual({ kind: "tool", interaction: groups[0].toolInteractions[0] });
+  });
 
-    expect(groups.map(({ turn: item }) => item)).toEqual([assistant, result, final]);
-    expect(groups[0].toolInteractions).toHaveLength(1);
-    expect(groups[0].toolInteractions[0].result).toBeNull();
-    expect(groups[1].toolInteractions).toEqual([]);
+  it("keeps a labelable content-less turn visible on its own", () => {
+    const call = turn({
+      id: "t#0",
+      idx: 0,
+      role: "assistant",
+      content: "",
+      labelable: true,
+      tool_calls: [{ id: "c", name: "search", arguments: "{}" }],
+    });
+    const reply = turn({ id: "t#1", idx: 1, role: "assistant", content: "answer" });
+
+    const groups = mergeSilentActivity(groupToolInteractions([call, reply]));
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#0", "t#1"]);
+  });
+
+  it("keeps a silent turn visible when a user turn follows instead of a reply", () => {
+    const call = turn({
+      id: "t#0",
+      idx: 0,
+      role: "assistant",
+      content: "",
+      labelable: false,
+      tool_calls: [{ id: "c", name: "search", arguments: "{}" }],
+    });
+    const user = turn({ id: "t#1", idx: 1, role: "user" });
+
+    const groups = mergeSilentActivity(groupToolInteractions([call, user]));
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#0", "t#1"]);
+  });
+
+  it("folds two consecutive silent turns into the single reply that finally answers", () => {
+    const callA = turn({
+      id: "t#0",
+      idx: 0,
+      role: "assistant",
+      content: "",
+      labelable: false,
+      tool_calls: [{ id: "a", name: "search", arguments: "{}" }],
+    });
+    const resultA = turn({ id: "t#1", idx: 1, role: "tool", tool_call_id: "a" });
+    const callB = turn({
+      id: "t#2",
+      idx: 2,
+      role: "assistant",
+      content: "",
+      labelable: false,
+      tool_calls: [{ id: "b", name: "fetch", arguments: "{}" }],
+    });
+    const resultB = turn({ id: "t#3", idx: 3, role: "tool", tool_call_id: "b" });
+    const reply = turn({ id: "t#4", idx: 4, role: "assistant", content: "final answer" });
+
+    const groups = mergeSilentActivity(groupToolInteractions([callA, resultA, callB, resultB, reply]));
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#4"]);
+    expect(groups[0].activity.map((a) => (a.kind === "tool" ? a.interaction.call.name : a.turn.id))).toEqual([
+      "search",
+      "fetch",
+    ]);
+  });
+
+  it("does not fold a silent turn into a reply from a different agent", () => {
+    const call = turn({
+      id: "t#0",
+      idx: 0,
+      role: "assistant",
+      content: "",
+      labelable: false,
+      agent: "Researcher",
+      tool_calls: [{ id: "c", name: "search", arguments: "{}" }],
+    });
+    const reply = turn({ id: "t#1", idx: 1, role: "assistant", content: "answer", agent: "Writer" });
+
+    const groups = mergeSilentActivity(groupToolInteractions([call, reply]));
+    expect(groups.map((g) => g.turn.id)).toEqual(["t#0", "t#1"]);
   });
 });

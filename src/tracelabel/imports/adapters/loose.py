@@ -118,6 +118,7 @@ def _langsmith(value: Json) -> tuple[Json, list[str]]:
 
 class LooseAdapter:
     name = "loose"
+    aggregates_input = False
 
     def __init__(self) -> None:
         self._counts: Counter[str] = Counter()

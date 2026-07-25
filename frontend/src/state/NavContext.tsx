@@ -54,6 +54,8 @@ export interface Controller {
   savedTargetId: string | null;
   cheatOpen: boolean;
   drawerOpen: boolean;
+  toolCallsExpanded: boolean;
+  toggleToolCallsExpanded: () => void;
   isFinished: boolean;
   completionCounts: { labeled: number; skipped: number; total: number };
   dispatch: React.Dispatch<NavAction>;
@@ -122,6 +124,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [cheatOpen, setCheatOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [savedTargetId, setSavedTargetId] = useState<string | null>(null);
   const navigationGeneration = useRef(0);
   const restoringTarget = useRef<Pick<TargetHistoryEntry, "traceIdx" | "turnIdx"> | null>(null);
@@ -432,7 +435,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   }
   if (!session || !queue || !trace) {
     return (
-      <div className="grid h-screen place-items-center text-sm text-slate-500">Loading…</div>
+      <div className="grid h-screen place-items-center bg-bg text-sm text-ink-muted">Loading…</div>
     );
   }
 
@@ -450,6 +453,8 @@ export function NavProvider({ children }: { children: ReactNode }) {
     savedTargetId,
     cheatOpen,
     drawerOpen,
+    toolCallsExpanded,
+    toggleToolCallsExpanded: () => setToolCallsExpanded((value) => !value),
     isFinished,
     completionCounts: queueCounts(queue),
     dispatch,

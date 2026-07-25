@@ -111,8 +111,8 @@ describe("TracePane document dispatch", () => {
   });
 });
 
-describe("TracePane tool presentation", () => {
-  it("groups matched results into one trace-level activity row and keeps the final answer separate", async () => {
+describe("TracePane activity cascade", () => {
+  it("merges a silent (content-less, non-labelable) tool-calling turn into the reply that follows, with steps shown as rows immediately", async () => {
     queue = [entry("trace-tools", 0)];
     traces = {
       "trace-tools": {
@@ -169,35 +169,34 @@ describe("TracePane tool presentation", () => {
     };
 
     const { container } = renderPane();
-    const activity = await screen.findByRole("button", {
-      name: /Tool activity.*2 tool calls.*search, fetch.*2 results received/,
-    });
+    await screen.findByText("The final answer stays chronological.");
 
-    expect(activity.getAttribute("aria-expanded")).toBe("false");
-    expect(container.querySelectorAll("[data-tool-activity]")).toHaveLength(1);
+    // trace-tools#0 has no content and isn't labelable, so it folds into the reply bubble
+    // instead of rendering as its own empty turn. (Nested tool-step rows also carry
+    // data-turn-id for their result turn, so exclude those to count top-level turns only.)
     expect(
-      Array.from(container.querySelectorAll("[data-turn-id]")).map((node) =>
+      Array.from(container.querySelectorAll("[data-turn-id]:not([data-tool-call])")).map((node) =>
         node.getAttribute("data-turn-id"),
       ),
-    ).toEqual(["trace-tools#0", "trace-tools#3"]);
-    expect(container.querySelector('[data-turn-id="trace-tools#0"] [data-turn-content]')).toBeNull();
-    expect(screen.queryByText(/search_result:/)).toBeNull();
-    expect(screen.getByText("The final answer stays chronological.")).toBeTruthy();
+    ).toEqual(["trace-tools#3"]);
 
-    fireEvent.click(activity);
-
-    expect(screen.getByText(/"q":"weather"/)).toBeTruthy();
-    expect(screen.getByText(/"url":"example.test"/)).toBeTruthy();
-    expect(screen.getByText(/search_result:/)).toBeTruthy();
-    expect(screen.getByText(/fetch_result:/)).toBeTruthy();
+    // steps render as rows immediately, no summary click required
     expect(
       Array.from(container.querySelectorAll("[data-tool-call]")).map((node) =>
         node.getAttribute("data-tool-call"),
       ),
     ).toEqual(["call_search", "call_fetch"]);
+    expect(screen.getByText("search")).toBeTruthy();
+    expect(screen.getByText("fetch")).toBeTruthy();
+    expect(screen.queryByText(/search_result/)).toBeNull(); // steps collapsed until clicked individually
+
+    const searchButton = container.querySelector('[data-tool-call="call_search"] button');
+    fireEvent.click(searchButton!);
+    expect(screen.getByText(/search_result/)).toBeTruthy();
+    expect(screen.queryByText(/fetch_result/)).toBeNull(); // only the clicked step expanded
   });
 
-  it("keeps unmatched results standalone and describes calls with no result", async () => {
+  it("keeps unmatched results standalone and shows a fallback for calls with no result", async () => {
     queue = [entry("partial-tools", 0)];
     traces = {
       "partial-tools": {
@@ -231,17 +230,17 @@ describe("TracePane tool presentation", () => {
     };
 
     const { container } = renderPane();
-    const activity = await screen.findByRole("button", {
-      name: /1 tool call.*lookup.*0 results received.*1 call without result/,
-    });
+    await screen.findByText("unmatched result remains visible");
 
-    expect(screen.getByText("unmatched result remains visible")).toBeTruthy();
     expect(container.querySelector('[data-turn-id="partial-tools#1"]')).toBeTruthy();
-    fireEvent.click(activity);
+
+    const card = container.querySelector('[data-tool-call="missing"]');
+    expect(card?.textContent).toContain("lookup");
+    fireEvent.click(card!.querySelector("button")!);
     expect(screen.getByText("No matching result in this trace.")).toBeTruthy();
   });
 
-  it("uses raw top-level turns in turn mode and exposes calls only on the active target", async () => {
+  it("keeps a labelable nested tool result reachable and focusable, auto-expanding its cascade when it becomes active", async () => {
     session.level = "turn";
     session.label_roles = ["assistant", "tool"];
     queue = [entry("turn-tools", 0, 3)];
@@ -286,32 +285,32 @@ describe("TracePane tool presentation", () => {
     };
 
     const { container } = renderPane({ annotation: true });
-    const activity = await screen.findByRole("button", {
-      name: /Tool activity.*1 tool call.*lookup/,
-    });
+    await screen.findByText(/turn #0/i);
 
+    // the tool result nests under its assistant call; only two top-level turn rows exist
     expect(
-      Array.from(container.querySelectorAll("[data-turn-id]")).map((node) =>
+      Array.from(container.querySelectorAll('[data-turn-role="assistant"]')).map((node) =>
         node.getAttribute("data-turn-id"),
       ),
-    ).toEqual(["turn-tools#0", "turn-tools#1", "turn-tools#2"]);
-    expect(activity.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText(/"id":42/)).toBeTruthy();
-    expect(screen.getByText("standalone tool evidence")).toBeTruthy();
-    expect(activity.closest("[data-tool-activity]")?.textContent).not.toContain(
-      "standalone tool evidence",
-    );
+    ).toEqual(["turn-tools#0", "turn-tools#2"]);
 
-    const toolTurn = container.querySelector<HTMLElement>('[data-turn-id="turn-tools#1"]');
+    // the assistant call itself starts active, so its cascade auto-opens with arguments visible
+    const card = await waitFor(() => {
+      const el = container.querySelector('[data-tool-call="call_1"]');
+      expect(el?.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+      return el;
+    });
+    expect(screen.getByText(/"id":42/)).toBeTruthy();
+
+    const toolTurn = container.querySelector<HTMLElement>('[data-tool-call="call_1"]');
     expect(toolTurn?.getAttribute("data-labelable")).toBe("true");
-    fireEvent.click(toolTurn!);
+    expect(toolTurn?.getAttribute("data-turn-idx")).toBe("1");
+    fireEvent.focus(toolTurn!);
 
     await waitFor(() => {
       expect(toolTurn?.getAttribute("data-active")).toBe("true");
-      expect(activity.getAttribute("aria-expanded")).toBe("false");
-      expect(document.activeElement).toBe(toolTurn);
     });
-    expect(screen.getByText(/target: turn #1/i)).toBeTruthy();
-    expect(screen.queryByText(/"id":42/)).toBeNull();
+    expect(screen.getByText(/turn #1/i)).toBeTruthy();
+    expect(card).toBeTruthy();
   });
 });

@@ -244,3 +244,87 @@ def test_derive_document_id():
     # deterministic on content alone
     assert derive_document_id("hello world") == did
     assert derive_document_id("different") != did
+
+
+# --- CTF-15 (v2 event rows) ---------------------------------------------------
+
+
+def test_v1_payload_validates_unchanged():
+    # A payload with no format_version key is still accepted (treated as v1 for
+    # validation purposes); TraceIn itself reports the current default (2).
+    obj = {"messages": [{"role": "user", "content": "hi"}]}
+    trace = validate_ctf_line(obj, "x", 1)
+    assert trace.format_version == 2
+    assert trace.messages[0].role == "user"
+
+
+def test_format_version_2_accepted():
+    obj = {"format_version": 2, "messages": [{"role": "user", "content": "hi"}]}
+    trace = validate_ctf_line(obj, "x", 1)
+    assert trace.format_version == 2
+
+
+def test_event_row_accepted_with_kind():
+    obj = {
+        "messages": [
+            {"role": "event", "content": "", "kind": "handoff", "name": "A -> B"},
+        ]
+    }
+    trace = validate_ctf_line(obj, "x", 1)
+    assert trace.messages[0].role == "event"
+    assert trace.messages[0].kind == "handoff"
+
+
+def test_reject_event_row_without_kind():
+    obj = {"messages": [{"role": "event", "content": ""}]}
+    with pytest.raises(CtfError) as excinfo:
+        validate_ctf_line(obj, "x", 1)
+    assert "kind" in str(excinfo.value)
+
+
+def test_reject_kind_on_non_event_role():
+    obj = {"messages": [{"role": "user", "content": "hi", "kind": "handoff"}]}
+    with pytest.raises(CtfError) as excinfo:
+        validate_ctf_line(obj, "x", 1)
+    assert "kind" in str(excinfo.value)
+
+
+def test_reject_invalid_kind_value():
+    obj = {"messages": [{"role": "event", "content": "", "kind": "bogus"}]}
+    with pytest.raises(CtfError) as excinfo:
+        validate_ctf_line(obj, "x", 1)
+    assert "kind" in str(excinfo.value)
+
+
+def test_reject_invalid_status_value():
+    obj = {"messages": [{"role": "tool", "content": "x", "status": "bogus"}]}
+    with pytest.raises(CtfError) as excinfo:
+        validate_ctf_line(obj, "x", 1)
+    assert "status" in str(excinfo.value)
+
+
+def test_structural_fields_survive_unknown_key_folding():
+    obj = {
+        "messages": [
+            {
+                "role": "tool",
+                "content": "ok",
+                "span_id": "s1",
+                "parent_id": "s0",
+                "agent": "researcher",
+                "started_at": "2026-01-01T00:00:00Z",
+                "duration_ms": 12.5,
+                "status": "ok",
+                "status_message": None,
+            }
+        ]
+    }
+    folded, warnings = fold_unknown_keys(obj)
+    message = folded["messages"][0]
+    assert message.get("span_id") == "s1"
+    assert message.get("parent_id") == "s0"
+    assert message.get("agent") == "researcher"
+    assert message.get("duration_ms") == 12.5
+    assert message.get("status") == "ok"
+    assert "raw" not in message
+    assert warnings == []

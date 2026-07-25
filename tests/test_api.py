@@ -150,6 +150,55 @@ def test_document_trace_detail_shape(turn_client):
     assert body["document"] == {"content": "a document", "content_type": "text"}
 
 
+def test_turn_out_round_trips_structural_fields(tmp_path):
+    trace = {
+        "id": "t_structured",
+        "format_version": 2,
+        "messages": [
+            {
+                "role": "event",
+                "content": "",
+                "kind": "handoff",
+                "name": "Researcher -> Writer",
+                "agent": "orchestrator",
+                "span_id": "s0",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {
+                "role": "tool",
+                "content": "result",
+                "tool_call_id": "c1",
+                "agent": "researcher",
+                "span_id": "s1",
+                "parent_id": "s0",
+                "duration_ms": 42.5,
+                "status": "error",
+                "status_message": "timeout",
+            },
+        ],
+    }
+    conn = Database(default_db_path(tmp_path))
+    conn.traces.import_trace(trace, "loose")
+    cfg = _cfg(tmp_path, label_roles=["assistant", "tool"])
+    conn.tasks.open(cfg, assume_yes=True)
+    queue = conn.tasks.build_queue(cfg.name)
+    client = TestClient(create_app(conn, cfg, queue))
+
+    body = client.get("/api/traces/t_structured").json()
+    event_turn, tool_turn = body["turns"]
+    assert event_turn["role"] == "event"
+    assert event_turn["kind"] == "handoff"
+    assert event_turn["agent"] == "orchestrator"
+    assert event_turn["span_id"] == "s0"
+    assert event_turn["labelable"] is False
+    assert tool_turn["agent"] == "researcher"
+    assert tool_turn["span_id"] == "s1"
+    assert tool_turn["parent_id"] == "s0"
+    assert tool_turn["duration_ms"] == 42.5
+    assert tool_turn["status"] == "error"
+    assert tool_turn["status_message"] == "timeout"
+
+
 # ── API-04 ───────────────────────────────────────────────────────────────────
 
 

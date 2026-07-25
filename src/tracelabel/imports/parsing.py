@@ -53,7 +53,7 @@ def apply_adapter(
 ) -> Iterator[tuple[int, Json]]:
     from .adapters.documents import DOCUMENT_CTF_SNIPPET, UnsupportedDocumentInput
 
-    if adapter.name == "datadog":
+    if adapter.aggregates_input:
         spans = [value for _, value in values]
         first_line = values[0][0] if values else 1
         for trace in adapter.to_ctf({"spans": spans}):

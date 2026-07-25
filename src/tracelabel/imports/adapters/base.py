@@ -13,6 +13,9 @@ GENERIC_CTF_SNIPPET = (
 @runtime_checkable
 class Adapter(Protocol):
     name: str
+    # True when to_ctf() must receive every line of the file aggregated into one
+    # value (e.g. `{"spans": [...]}`), instead of being called once per line.
+    aggregates_input: bool
 
     def sniff(self, first_values: list[Any]) -> bool: ...
 
@@ -29,14 +32,24 @@ class AdapterRegistry:
         self._factories = tuple(factories)
 
     @classmethod
-    def default(cls) -> "AdapterRegistry":
+    def default(cls, *, include_all_spans: bool = False) -> "AdapterRegistry":
         from .adk import AdkAdapter
         from .ctf import CtfAdapter
         from .datadog import DatadogAdapter
         from .documents import DocumentsAdapter
         from .loose import LooseAdapter
+        from .otel import OtelAdapter
 
-        return cls((CtfAdapter, AdkAdapter, DatadogAdapter, DocumentsAdapter, LooseAdapter))
+        return cls(
+            (
+                CtfAdapter,
+                lambda: OtelAdapter(include_all_spans=include_all_spans),
+                AdkAdapter,
+                DatadogAdapter,
+                DocumentsAdapter,
+                LooseAdapter,
+            )
+        )
 
     def detect(self, first_values: list[Any]) -> Adapter:
         for factory in self._factories:
@@ -47,7 +60,7 @@ class AdapterRegistry:
             "Could not detect the format of this file.\n"
             "Each line should be a CTF trace, for example:\n\n"
             f"  {GENERIC_CTF_SNIPPET}\n\n"
-            "Pass --from adk|datadog|loose|documents to force an adapter, or point at a "
+            "Pass --from adk|datadog|otel|loose|documents to force an adapter, or point at a "
             "directory of files to import them as documents. See docs/trace-format.md."
         )
 

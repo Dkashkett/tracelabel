@@ -66,7 +66,11 @@ class TraceRepository:
             for index, message in enumerate(messages):
                 content = cast(str | list[Json], message["content"])
                 connection.execute(
-                    "INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO turns ("
+                    "id, trace_id, idx, role, content, content_type, tool_calls, tool_call_id, "
+                    "name, metadata, raw, span_id, parent_id, agent, kind, started_at, "
+                    "duration_ms, status, status_message"
+                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         f"{trace_id}#{index}",
                         trace_id,
@@ -79,6 +83,14 @@ class TraceRepository:
                         message.get("name"),
                         canonical_json(message.get("metadata", {})),
                         _json_or_none(message.get("raw")),
+                        message.get("span_id"),
+                        message.get("parent_id"),
+                        message.get("agent"),
+                        message.get("kind"),
+                        message.get("started_at"),
+                        message.get("duration_ms"),
+                        message.get("status"),
+                        message.get("status_message"),
                     ),
                 )
         return "inserted", trace_id

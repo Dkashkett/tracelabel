@@ -3,7 +3,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Json = dict[str, Any]
-Role = Literal["system", "user", "assistant", "tool"]
+Role = Literal["system", "user", "assistant", "tool", "event"]
+Kind = Literal["handoff", "retrieval", "agent", "guardrail", "span"]
+Status = Literal["ok", "error"]
 ContentType = Literal["text", "json", "html", "parts"]
 DocumentContentType = Literal["text", "json", "html", "markdown"]
 
@@ -53,12 +55,28 @@ class MessageIn(BaseModel):
     name: str | None = None
     metadata: Json = Field(default_factory=dict)
     raw: Json | None = None
+    span_id: str | None = None
+    parent_id: str | None = None
+    agent: str | None = None
+    kind: Kind | None = None
+    started_at: str | None = None
+    duration_ms: float | None = None
+    status: Status | None = None
+    status_message: str | None = None
+
+    @model_validator(mode="after")
+    def _kind_required_iff_event(self) -> "MessageIn":
+        if self.role == "event" and self.kind is None:
+            raise ValueError('role "event" requires a "kind"')
+        if self.role != "event" and self.kind is not None:
+            raise ValueError('"kind" may only be set on role "event"')
+        return self
 
 
 class TraceIn(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    format_version: int = 1
+    format_version: int = 2
     id: str | None = None
     source: str | None = None
     metadata: Json = Field(default_factory=dict)

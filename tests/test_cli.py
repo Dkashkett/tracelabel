@@ -117,6 +117,87 @@ def test_import_summary_output(tmp_path):
     assert "2 skipped (duplicate)" in r2.stdout
 
 
+# ── CLI-15: --from otel / --include-all-spans ─────────────────────────────────
+
+
+def test_import_from_otel_forced(tmp_path):
+    envelope = {
+        "resourceSpans": [
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "3" * 32,
+                                "spanId": "4" * 16,
+                                "parentSpanId": "",
+                                "name": "chat",
+                                "startTimeUnixNano": "1700000000000000000",
+                                "attributes": [
+                                    {
+                                        "key": "gen_ai.operation.name",
+                                        "value": {"stringValue": "chat"},
+                                    },
+                                    {
+                                        "key": "gen_ai.input.messages",
+                                        "value": {
+                                            "stringValue": '[{"role":"user","content":"hi"}]'
+                                        },
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    data = tmp_path / "otel.json"
+    data.write_text(json.dumps(envelope), encoding="utf-8")
+
+    r = runner.invoke(cli.app, ["import", str(data), "--from", "otel"])
+    assert r.exit_code == 0
+    assert "imported otel.json: 1 inserted" in r.stdout
+
+
+def test_import_include_all_spans_flag(tmp_path):
+    envelope = {
+        "resourceSpans": [
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "5" * 32,
+                                "spanId": "6" * 16,
+                                "parentSpanId": "",
+                                "name": "internal_only",
+                                "startTimeUnixNano": "1700000000000000000",
+                                "attributes": [{"key": "foo", "value": {"stringValue": "bar"}}],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    data = tmp_path / "otel.json"
+    data.write_text(json.dumps(envelope), encoding="utf-8")
+    db_path = default_db_path(tmp_path)
+
+    r = runner.invoke(
+        cli.app,
+        ["import", str(data), "--from", "otel", "--include-all-spans", "--db", str(db_path)],
+    )
+    assert r.exit_code == 0
+    conn = Database(db_path)
+    turns = conn.traces.get_turns("5" * 32)
+    conn.close()
+    # without --include-all-spans this span would be dropped into trace raw entirely
+    assert [t["role"] for t in turns] == ["event"]
+    assert turns[0]["kind"] == "span"
+
+
 # ── CLI-04: tasks list table ──────────────────────────────────────────────────
 
 

@@ -5,8 +5,8 @@ export function SavedDot({ status }: { status: "idle" | "saving" | "saved" }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-xs",
-        status === "saving" ? "text-slate-400" : "text-green-600 dark:text-green-400",
+        "inline-flex items-center gap-1 text-xs font-medium",
+        status === "saving" ? "text-ink-faint" : "text-pass",
       )}
     >
       <span className={cn(status === "saving" && "animate-pulse")}>●</span>

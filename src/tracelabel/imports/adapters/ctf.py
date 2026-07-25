@@ -15,6 +15,7 @@ def _looks_like_ctf(value: Any) -> bool:
 
 class CtfAdapter:
     name = "ctf"
+    aggregates_input = False
 
     def sniff(self, first_values: list[Any]) -> bool:
         return bool(first_values) and _looks_like_ctf(first_values[0])

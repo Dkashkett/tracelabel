@@ -3,9 +3,11 @@
   "appName": "demo",
   "userId": "u1",
   "events": [
-    {"author": "user", "invocationId": "inv1", "content": {"parts": [{"text": "What's the weather in Paris?"}]}},
-    {"author": "planner", "invocationId": "inv2", "content": {"parts": [{"text": "Let me check.", "function_call": {"id": "c1", "name": "get_weather", "args": {"city": "Paris"}}}]}},
-    {"author": "planner", "invocationId": "inv2", "content": {"parts": [{"function_response": {"id": "c1", "name": "get_weather", "response": {"temp_c": 18}}}]}},
-    {"author": "responder", "invocationId": "inv3", "content": {"parts": [{"text": "It's 18°C in Paris."}]}}
+    {"id": "e1", "author": "user", "invocationId": "inv1", "timestamp": 1700000000, "content": {"parts": [{"text": "What's the weather in Paris?"}]}},
+    {"id": "e2", "author": "planner", "invocationId": "inv2", "timestamp": 1700000001, "content": {"parts": [{"text": "Let me check.", "function_call": {"id": "c1", "name": "get_weather", "args": {"city": "Paris"}}}]}},
+    {"id": "e3", "author": "planner", "invocationId": "inv2", "timestamp": 1700000002, "content": {"parts": [{"function_response": {"id": "c1", "name": "get_weather", "response": {"temp_c": 18}}}]}},
+    {"id": "e4", "author": "planner", "invocationId": "inv3", "timestamp": 1700000003, "content": {"parts": [{"function_call": {"id": "c2", "name": "transfer_to_agent", "args": {"agent_name": "responder"}}}]}},
+    {"id": "e5", "author": "responder", "invocationId": "inv4", "timestamp": 1700000004, "content": {"parts": [{"text": "It's 18°C in Paris."}]}},
+    {"id": "e6", "author": "responder", "invocationId": "inv4", "timestamp": 1700000005, "errorCode": "TOOL_ERROR", "errorMessage": "downstream failure", "content": {"parts": [{"text": "Something went wrong."}]}}
   ]
 }

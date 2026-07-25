@@ -4,22 +4,21 @@ import type { QueueEntry } from "@/api/types";
 
 function statusOf(e: QueueEntry): { glyph: string; label: string; className: string } {
   const addressed = e.n_labeled + e.n_skipped;
-  if (addressed === 0) return { glyph: "○", label: "todo", className: "text-slate-400" };
-  if (addressed < e.n_targets)
-    return { glyph: "◐", label: "partial", className: "text-amber-500" };
-  if (e.n_labeled === 0) return { glyph: "⊘", label: "skipped", className: "text-slate-400" };
-  return { glyph: "●", label: "done", className: "text-green-600" };
+  if (addressed === 0) return { glyph: "○", label: "todo", className: "text-ink-faint" };
+  if (addressed < e.n_targets) return { glyph: "◐", label: "partial", className: "text-warn" };
+  if (e.n_labeled === 0) return { glyph: "⊘", label: "skipped", className: "text-ink-faint" };
+  return { glyph: "●", label: "done", className: "text-pass" };
 }
 
 export function TraceDrawer() {
   const { queue, state, goToTrace, drawerOpen, setDrawerOpen } = useController();
 
   return (
-    <div className="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <div className="border-t border-line bg-surface">
       <button
         type="button"
         onClick={() => setDrawerOpen(!drawerOpen)}
-        className="flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-400"
+        className="flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-faint"
       >
         <span>{drawerOpen ? "▾" : "▸"}</span>
         traces ({queue.length})
@@ -37,15 +36,11 @@ export function TraceDrawer() {
                 onClick={() => goToTrace(i)}
                 className={cn(
                   "flex items-center gap-1 rounded border px-2 py-1 text-xs",
-                  current
-                    ? "border-sky-500 bg-sky-50 dark:bg-sky-900/30"
-                    : "border-transparent hover:bg-slate-100 dark:hover:bg-slate-800",
+                  current ? "border-accent bg-accent/10" : "border-transparent hover:bg-surface-raised",
                 )}
               >
                 <span className={s.className}>{s.glyph}</span>
-                <span className="max-w-[8rem] truncate text-slate-600 dark:text-slate-300">
-                  {e.trace_id}
-                </span>
+                <span className="max-w-[8rem] truncate text-ink-muted">{e.trace_id}</span>
               </button>
             );
           })}

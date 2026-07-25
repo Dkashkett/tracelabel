@@ -48,7 +48,7 @@ export interface DocumentDetail {
 export interface Turn {
   id: string; // "{trace_id}#{idx}"
   idx: number;
-  role: "system" | "user" | "assistant" | "tool";
+  role: "system" | "user" | "assistant" | "tool" | "event";
   content: string; // verbatim; if content_type=="parts", JSON-serialized parts
   content_type: "text" | "json" | "html" | "parts";
   tool_calls?: ToolCall[];
@@ -56,6 +56,14 @@ export interface Turn {
   name?: string;
   labelable: boolean; // server-computed: role ∈ label_roles && level == "turn"
   metadata: object;
+  span_id?: string | null; // source span/event id
+  parent_id?: string | null; // parent span id (presentation-only hierarchy)
+  agent?: string | null; // which agent/sub-agent produced this row
+  kind?: "handoff" | "retrieval" | "agent" | "guardrail" | "span" | null; // only on role:"event"
+  started_at?: string | null; // ISO-8601
+  duration_ms?: number | null;
+  status?: "ok" | "error" | null;
+  status_message?: string | null;
 }
 export interface ToolCall {
   id?: string;

@@ -135,6 +135,19 @@ class ExportService:
         metadata = cls._json_object(turn["metadata"])
         if metadata:
             message["metadata"] = metadata
+        for field in (
+            "span_id",
+            "parent_id",
+            "agent",
+            "kind",
+            "started_at",
+            "duration_ms",
+            "status",
+            "status_message",
+        ):
+            value = turn[field]
+            if value is not None:
+                message[field] = value
         return message
 
     def _write(

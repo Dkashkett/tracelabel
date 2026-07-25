@@ -1,11 +1,24 @@
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from typing import Any, cast
 
 from tracelabel.ctf.hashing import canonical_json, sha256_hex
 from tracelabel.ctf.models import Json
 
 _SESSION_KNOWN = {"id", "appName", "userId", "events"}
-_EVENT_KNOWN = {"author", "content", "invocationId", "invocation_id"}
+_EVENT_KNOWN = {
+    "author",
+    "content",
+    "invocationId",
+    "invocation_id",
+    "id",
+    "timestamp",
+    "errorCode",
+    "error_code",
+    "errorMessage",
+    "error_message",
+}
+_TRANSFER_TOOL = "transfer_to_agent"
 
 
 def _is_adk(value: Any) -> bool:
@@ -47,6 +60,21 @@ def _matching_call_id(response: Json, messages: list[Json]) -> str | None:
     return None
 
 
+def _started_at(event: Json) -> str | None:
+    timestamp = event.get("timestamp")
+    if not isinstance(timestamp, int | float):
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _error_status(event: Json) -> tuple[str | None, str | None]:
+    error_code = event.get("errorCode") or event.get("error_code")
+    error_message = event.get("errorMessage") or event.get("error_message")
+    if error_code or error_message:
+        return "error", error_message if isinstance(error_message, str) else None
+    return None, None
+
+
 def _session_to_ctf(session: Json) -> Json:
     messages: list[Json] = []
     for event in session.get("events", []):
@@ -54,22 +82,55 @@ def _session_to_ctf(session: Json) -> Json:
             continue
         author = event.get("author")
         role = "user" if author == "user" else "assistant"
+        agent = author if role == "assistant" and author is not None else None
+        span_id = event.get("id")
+        parent_id = event.get("invocationId") or event.get("invocation_id")
+        started_at = _started_at(event)
+        status, status_message = _error_status(event)
+        common: Json = {}
+        if span_id is not None:
+            common["span_id"] = span_id
+        if parent_id is not None:
+            common["parent_id"] = parent_id
+        if started_at is not None:
+            common["started_at"] = started_at
+        if agent is not None:
+            common["agent"] = agent
+
         parts = (event.get("content") or {}).get("parts", []) or []
         text = "".join(part["text"] for part in parts if isinstance(part, dict) and "text" in part)
         calls: list[Json] = []
         for part in parts:
-            if isinstance(part, dict) and "function_call" in part:
-                function_call = part["function_call"]
-                calls.append(
-                    {
-                        "id": function_call.get("id") or _synthesized_id(function_call),
-                        "type": "function",
-                        "function": {
-                            "name": function_call["name"],
-                            "arguments": _raw_json_string(function_call.get("args", {})),
-                        },
-                    }
-                )
+            if not (isinstance(part, dict) and "function_call" in part):
+                continue
+            function_call = part["function_call"]
+            if function_call.get("name") == _TRANSFER_TOOL:
+                args = function_call.get("args", {}) or {}
+                target = args.get("agent_name")
+                handoff: Json = {
+                    "role": "event",
+                    "content": "",
+                    "kind": "handoff",
+                    "name": f"{author} -> {target}",
+                    "metadata": {"from": author, "to": target},
+                    **common,
+                }
+                if status is not None:
+                    handoff["status"] = status
+                    if status_message is not None:
+                        handoff["status_message"] = status_message
+                messages.append(handoff)
+                continue
+            calls.append(
+                {
+                    "id": function_call.get("id") or _synthesized_id(function_call),
+                    "type": "function",
+                    "function": {
+                        "name": function_call["name"],
+                        "arguments": _raw_json_string(function_call.get("args", {})),
+                    },
+                }
+            )
         responses = [
             part["function_response"]
             for part in parts
@@ -77,14 +138,18 @@ def _session_to_ctf(session: Json) -> Json:
         ]
 
         if text or calls:
-            message: Json = {"role": role, "content": text}
+            message: Json = {"role": role, "content": text, **common}
             if calls:
                 message["tool_calls"] = calls
             if role == "assistant" and author is not None:
                 message["name"] = author
             invocation = event.get("invocationId") or event.get("invocation_id")
             if invocation is not None:
-                message["metadata"] = {"invocation_id": invocation}
+                message.setdefault("metadata", {})["invocation_id"] = invocation
+            if status is not None:
+                message["status"] = status
+                if status_message is not None:
+                    message["status_message"] = status_message
             raw = _unmapped(event, _EVENT_KNOWN)
             if raw is not None:
                 message["raw"] = raw
@@ -95,6 +160,8 @@ def _session_to_ctf(session: Json) -> Json:
                 "role": "tool",
                 "content": _raw_json_string(response.get("response")),
             }
+            if agent is not None:
+                tool_message["agent"] = agent
             call_id = response.get("id") or _matching_call_id(response, messages)
             if call_id is not None:
                 tool_message["tool_call_id"] = call_id
@@ -123,6 +190,7 @@ def _session_to_ctf(session: Json) -> Json:
 
 class AdkAdapter:
     name = "adk"
+    aggregates_input = False
 
     def sniff(self, first_values: list[Any]) -> bool:
         return bool(first_values) and _is_adk(first_values[0])

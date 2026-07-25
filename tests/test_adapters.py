@@ -12,6 +12,7 @@ from tracelabel.imports.adapters.ctf import CtfAdapter
 from tracelabel.imports.adapters.datadog import DatadogAdapter
 from tracelabel.imports.adapters.documents import DocumentsAdapter
 from tracelabel.imports.adapters.loose import LooseAdapter
+from tracelabel.imports.adapters.otel import OtelAdapter
 from tracelabel.imports.parsing import iter_target as parse_target
 from tracelabel.imports.service import ImportService
 
@@ -72,6 +73,12 @@ def assert_content_bytes_equal(produced: list[dict], expected: list[dict]) -> No
 
 def test_detect_priority_order():
     ctf = {"messages": [{"role": "user", "content": "hi"}]}
+    otel_envelope = {"resourceSpans": [{"scopeSpans": [{"spans": []}]}]}
+    otel_bare_span = {
+        "traceId": "a" * 32,
+        "spanId": "b" * 16,
+        "startTimeUnixNano": "1000",
+    }
     adk = {"events": [{"author": "user", "invocationId": "i"}]}
     dd = {"trace_id": "t", "meta": {"input": {"messages": []}}}
     loose = {"conversation": [{"role": "user", "content": "hi"}]}
@@ -79,6 +86,8 @@ def test_detect_priority_order():
     doc_obj = {"content": "hi", "id": "d1"}
 
     assert isinstance(detect([ctf]), CtfAdapter)
+    assert isinstance(detect([otel_envelope]), OtelAdapter)
+    assert isinstance(detect([otel_bare_span]), OtelAdapter)
     assert isinstance(detect([adk]), AdkAdapter)
     assert isinstance(detect([dd]), DatadogAdapter)
     assert isinstance(detect([doc_string]), DocumentsAdapter)
@@ -97,6 +106,13 @@ def test_detect_priority_order():
     }
     assert not DocumentsAdapter().sniff([trace_like])
     assert isinstance(detect([trace_like]), CtfAdapter)  # ctf still wins overall
+
+    # OTEL and Datadog spans must never cross-sniff each other, even though both
+    # are trace-id-keyed span shapes: Datadog spans always carry `meta`, OTEL spans
+    # never do; OTEL ids are hex, Datadog's are not.
+    assert not OtelAdapter().sniff([dd])
+    assert not DatadogAdapter().sniff([otel_bare_span])
+    assert not DatadogAdapter().sniff([otel_envelope])
 
 
 def test_registry_honors_injected_order_and_returns_fresh_adapters():
@@ -132,6 +148,7 @@ def test_import_service_orchestrates_injected_dependencies(tmp_path):
 
     class FakeAdapter:
         name = "fake"
+        aggregates_input = False
 
         def sniff(self, first_values):
             return True
@@ -218,8 +235,27 @@ def test_golden_adk():
     msgs = produced[0]["messages"]
     assert msgs[1]["tool_calls"][0]["function"]["name"] == "get_weather"
     assert msgs[2]["role"] == "tool"
-    # multi-agent authors surface as the `name` chip
+    # multi-agent authors surface as the `name` chip and the `agent` structural field
     assert {m.get("name") for m in msgs if m["role"] == "assistant"} == {"planner", "responder"}
+    assert msgs[1]["agent"] == "planner"
+    assert msgs[2]["agent"] == "planner"  # tool result inherits the author's agent
+
+    # event id / invocation id become span_id / parent_id
+    assert msgs[0]["span_id"] == "e1"
+    assert msgs[0]["parent_id"] == "inv1"
+    assert msgs[0]["started_at"] == "2023-11-14T22:13:20Z"
+
+    # transfer_to_agent surfaces as a standalone handoff event, not a normal tool call
+    handoff = msgs[3]
+    assert handoff["role"] == "event"
+    assert handoff["kind"] == "handoff"
+    assert handoff["name"] == "planner -> responder"
+    assert handoff["metadata"] == {"from": "planner", "to": "responder"}
+
+    # errorCode/errorMessage on an event become status/status_message
+    errored = msgs[5]
+    assert errored["status"] == "error"
+    assert errored["status_message"] == "downstream failure"
 
 
 # ── ADP-03 / ADP-13 ─────────────────────────────────────────────────────────
@@ -232,9 +268,139 @@ def test_golden_datadog():
     assert produced == expected
     assert_content_bytes_equal(produced, expected)
 
-    # grouped into two traces, span ids/timings land in turn metadata
+    # grouped into two traces, span ids/timings land in first-class structural fields
     assert [t["id"] for t in produced] == ["ta", "tb"]
-    assert produced[0]["messages"][1]["metadata"]["span_id"] == "s1"
+    ta_messages = produced[0]["messages"]
+    assert ta_messages[1]["span_id"] == "s1"
+    # duration/status live on the tool *result* row, not the call row: the
+    # frontend derives a tool interaction's duration/status from its paired result.
+    assert "span_id" not in ta_messages[2]
+    assert ta_messages[3]["span_id"] == "s2"
+    assert ta_messages[3]["parent_id"] == "s1"  # tool call span nested under the llm span
+    # `error` on the span becomes status/status_message
+    assert ta_messages[-1]["status"] == "error"
+    assert ta_messages[-1]["status_message"] == "rate limited"
+
+    # workflow/retrieval kinds become event rows (not dropped to raw); descendants
+    # inherit `agent` from the nearest enclosing workflow/agent-kind span.
+    tb_messages = produced[1]["messages"]
+    workflow_event = tb_messages[0]
+    assert workflow_event["role"] == "event"
+    assert workflow_event["kind"] == "agent"
+    assert workflow_event["name"] == "MainWorkflow"
+    llm_output = tb_messages[3]
+    assert llm_output["agent"] == "MainWorkflow"
+    retrieval_event = tb_messages[4]
+    assert retrieval_event["kind"] == "retrieval"
+    assert retrieval_event["agent"] == "MainWorkflow"
+    # a still-unmapped kind (e.g. "internal") is dropped into raw, as before
+    assert produced[1]["raw"]["datadog_spans"]["s7"] == {"custom": "z"}
+
+
+# ── ADP-15 (OTEL) ───────────────────────────────────────────────────────────
+
+
+def test_golden_otel():
+    envelope = json.loads((GOLDEN / "otel" / "input.json").read_text(encoding="utf-8"))
+    produced = list(OtelAdapter().to_ctf(envelope))
+    expected = read_jsonl(GOLDEN / "otel" / "expected.jsonl")
+    assert produced == expected
+    assert_content_bytes_equal(produced, expected)
+
+    msgs = produced[0]["messages"]
+    # invoke_agent → a kind:"agent" event boundary; gen_ai.agent.name propagates as
+    # `agent` to every descendant row (DFS tree order, chronological within siblings).
+    agent_event = msgs[0]
+    assert agent_event["role"] == "event"
+    assert agent_event["kind"] == "agent"
+    assert agent_event["name"] == "Researcher"
+    # only the row carrying a span's structural fields (its last emitted message)
+    # gets `agent`; a span with several conversational rows attributes the span
+    # itself (id/timing/agent) to the last one only.
+    assert {msgs[0]["agent"], msgs[2]["agent"], msgs[4]["agent"], msgs[5]["agent"]} == {
+        "Researcher"
+    }
+
+    # chat span → conversational messages from gen_ai.input.messages/output.messages,
+    # with model/token usage landing in metadata on the last (output) message only.
+    assert msgs[1] == {"role": "user", "content": "What is the weather in Boston?"}
+    assert msgs[2]["content"] == "Let me check that."
+    assert msgs[2]["metadata"] == {"model": "gpt-4o-mini", "tokens_in": 12, "tokens_out": 8}
+
+    # execute_tool → synthesized tool_calls + a paired tool result row; status:error
+    # comes from OTLP status.code == 2, and duration/span fields live on the result.
+    assert msgs[3]["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert msgs[4]["role"] == "tool"
+    assert msgs[4]["status"] == "error"
+    assert msgs[4]["status_message"] == "downstream timeout"
+    assert msgs[4]["duration_ms"] == 300.0
+
+    # embeddings → a kind:"retrieval" event row
+    assert msgs[5]["kind"] == "retrieval"
+
+    # a fully generic span with no gen_ai/db semconv is dropped into raw by default
+    assert produced[0]["raw"]["otel_spans"]["internal_cache_lookup"] == {"cache.hit": False}
+
+
+def test_otel_include_all_spans_maps_generic_spans_instead_of_dropping():
+    envelope = json.loads((GOLDEN / "otel" / "input.json").read_text(encoding="utf-8"))
+    produced = list(OtelAdapter(include_all_spans=True).to_ctf(envelope))
+    msgs = produced[0]["messages"]
+    assert "raw" not in produced[0]
+    generic = next(m for m in msgs if m.get("name") == "internal_cache_lookup")
+    assert generic["role"] == "event"
+    assert generic["kind"] == "span"
+    assert generic["metadata"] == {"cache.hit": False}
+
+
+def test_otel_bare_span_jsonl_aggregates_across_lines(tmp_path):
+    trace_id = "2" * 32
+    root = {
+        "traceId": trace_id,
+        "spanId": "1" * 16,
+        "parentSpanId": "",
+        "name": "invoke_agent",
+        "startTimeUnixNano": "1700000000000000000",
+        "attributes": [
+            {"key": "gen_ai.operation.name", "value": {"stringValue": "invoke_agent"}},
+            {"key": "gen_ai.agent.name", "value": {"stringValue": "Root"}},
+        ],
+    }
+    child = {
+        "traceId": trace_id,
+        "spanId": "3" * 16,
+        "parentSpanId": "1" * 16,
+        "name": "chat",
+        "startTimeUnixNano": "1700000000500000000",
+        "attributes": [
+            {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+            {
+                "key": "gen_ai.input.messages",
+                "value": {"stringValue": '[{"role":"user","content":"hi"}]'},
+            },
+        ],
+    }
+    # each JSONL line is a single bare span; the adapter must aggregate every line
+    # before grouping by traceId (mirrors Datadog's aggregates_input behavior).
+    path = write_lines(tmp_path / "spans.jsonl", [child, root])
+    plan = iter_target(path)
+    assert plan.adapter is not None and plan.adapter.name == "otel"
+    traces = [ctf for _, _, ctf in plan.items]
+    assert len(traces) == 1
+    assert traces[0]["id"] == trace_id
+    # DFS tree order: root's own event row first even though it appeared second in the file
+    assert traces[0]["messages"][0]["kind"] == "agent"
+    assert traces[0]["messages"][1]["content"] == "hi"
+    assert traces[0]["messages"][1]["agent"] == "Root"
+
+
+def test_from_otel_forced(tmp_path):
+    envelope = json.loads((GOLDEN / "otel" / "input.json").read_text(encoding="utf-8"))
+    path = write_lines(tmp_path / "otel.json", [envelope])
+    plan = iter_target(path, from_="otel")
+    assert plan.adapter is not None and plan.adapter.name == "otel"
+    traces = [ctf for _, _, ctf in plan.items]
+    assert len(traces) == 1
 
 
 # ── ADP-04 ──────────────────────────────────────────────────────────────────

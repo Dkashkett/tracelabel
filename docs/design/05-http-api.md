@@ -29,6 +29,8 @@ interface SessionInfo {
   annotator: string;
   schema_hash: string;
   shuffle: boolean;
+  mode: "labeling" | "review";    // "review" = correcting another annotator's existing labels
+  review_of: string | null;       // in review mode, the annotator (judge) whose labels are reviewed
 }
 interface ResolvedField {
   name: string; label: string;
@@ -54,6 +56,7 @@ interface TraceDetail {
   document?: DocumentDetail;      // set iff the trace is a document (content non-null); turns is [] then
   annotations: Record<string, AnnotationOut>;   // keyed by target_id, this task+annotator only
   suggestions: Record<string, SuggestionOut>;   // keyed by target_id
+  review_of: Record<string, AnnotationOut>;     // review mode: judge labels being reviewed, by target_id; {} otherwise
 }
 interface DocumentDetail {
   content: string;
@@ -62,14 +65,23 @@ interface DocumentDetail {
 interface Turn {
   id: string;                     // "{trace_id}#{idx}"
   idx: number;
-  role: "system" | "user" | "assistant" | "tool";
+  role: "system" | "user" | "assistant" | "tool" | "event";
   content: string;                // verbatim; if content_type=="parts", JSON-serialized parts
   content_type: "text" | "json" | "html" | "parts";
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   name?: string;
-  labelable: boolean;             // server-computed: role ∈ label_roles && level == "turn"
+  labelable: boolean;             // server-computed: role ∈ label_roles && level == "turn"; "event" is never labelable
   metadata: object;
+  // CTF v2 structural fields (01 §3.2) — optional, presentation-only, all null on v1-shaped traces
+  span_id?: string | null;        // source span/event id
+  parent_id?: string | null;      // parent span id (source hierarchy, presentation-only)
+  agent?: string | null;          // which agent/sub-agent produced this row
+  kind?: "handoff" | "retrieval" | "agent" | "guardrail" | "span" | null;   // only on role:"event"
+  started_at?: string | null;     // ISO-8601
+  duration_ms?: number | null;
+  status?: "ok" | "error" | null;
+  status_message?: string | null;
 }
 
 // PUT /api/annotations

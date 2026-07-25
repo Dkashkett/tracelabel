@@ -9,6 +9,7 @@ class LevelChoice(str, Enum):
 class FromChoice(str, Enum):
     auto = "auto"
     ctf = "ctf"
+    otel = "otel"
     adk = "adk"
     datadog = "datadog"
     documents = "documents"

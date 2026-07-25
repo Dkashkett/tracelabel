@@ -1,34 +1,40 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { cn } from "@/lib/utils";
 import { useController } from "@/state/NavContext";
-import { groupToolInteractions, rawTurnGroups } from "@/presentation/turnGroups";
+import { usePresentationRows } from "@/state/usePresentationRows";
+import type { PresentationRow } from "@/presentation/agentSections";
+import { AgentSectionHeader } from "./AgentSectionHeader";
 import { DocumentPane } from "./DocumentPane";
+import { EventCard } from "./EventCard";
+import { HandoffDivider } from "./HandoffDivider";
 import { TurnCard } from "./TurnCard";
 
-const ESTIMATED_TURN_HEIGHT = 120;
+const ESTIMATED_TURN_HEIGHT = 160;
 
 export function TracePane() {
-  const { trace, session, state, focusTurnByIdx } = useController();
-  const turns = trace.turns;
+  const { trace, session, state, focusTurnByIdx, toolCallsExpanded } = useController();
   const parentRef = useRef<HTMLDivElement>(null);
   const turnLevel = session.level === "turn";
-  const groups = useMemo(
-    () => (turnLevel ? rawTurnGroups(turns) : groupToolInteractions(turns)),
-    [turnLevel, turns],
-  );
+  const rows = usePresentationRows();
 
   const virtualizer = useVirtualizer({
-    count: groups.length,
+    count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ESTIMATED_TURN_HEIGHT,
     overscan: 8,
   });
 
-  const activeArrayIdx = groups.findIndex(
-    ({ turn, toolInteractions }) =>
-      turn.idx === state.turnIdx ||
-      toolInteractions.some((interaction) => interaction.result?.idx === state.turnIdx),
-  );
+  const isActiveRow = (row: PresentationRow) =>
+    row.kind === "turn" &&
+    (row.turn.idx === state.turnIdx ||
+      row.activity.some((item) =>
+        item.kind === "tool"
+          ? item.interaction.result?.idx === state.turnIdx
+          : item.turn.idx === state.turnIdx,
+      ));
+
+  const activeArrayIdx = rows.findIndex(isActiveRow);
 
   // Teleprompter scroll: anchor the active turn ~1/3 from the top on advance (06 §3).
   useEffect(() => {
@@ -36,9 +42,8 @@ export function TracePane() {
     virtualizer.scrollToIndex(activeArrayIdx, { align: "start" });
     const el = parentRef.current;
     if (el) {
-      const activeTurnIdx = groups[activeArrayIdx]?.turn.idx;
       const frame = requestAnimationFrame(() => {
-        el.querySelector<HTMLElement>(`[data-turn-idx="${activeTurnIdx}"]`)?.focus({
+        el.querySelector<HTMLElement>(`[data-turn-idx="${state.turnIdx}"]`)?.focus({
           preventScroll: true,
         });
         el.scrollBy?.({ top: -el.clientHeight / 3, behavior: "smooth" });
@@ -54,31 +59,22 @@ export function TracePane() {
   const items =
     virtualItems.length > 0
       ? virtualItems
-      : groups.slice(0, 16).map((_, index) => ({
+      : rows.slice(0, 16).map((_, index) => ({
           index,
           start: index * ESTIMATED_TURN_HEIGHT,
         }));
-  const totalSize = Math.max(
-    virtualizer.getTotalSize(),
-    items.length * ESTIMATED_TURN_HEIGHT,
-  );
+  const totalSize = Math.max(virtualizer.getTotalSize(), items.length * ESTIMATED_TURN_HEIGHT);
 
   if (trace.document) {
     return <DocumentPane doc={trace.document} />;
   }
 
   return (
-    <div ref={parentRef} className="h-full overflow-auto bg-slate-50 dark:bg-slate-950">
-      <div style={{ height: totalSize, position: "relative" }}>
+    <div ref={parentRef} className="h-full overflow-auto bg-bg">
+      <div className="mx-auto max-w-[820px] px-6" style={{ height: totalSize, position: "relative" }}>
         {items.map((vi) => {
-          const group = groups[vi.index];
-          const turn = group.turn;
-          const active =
-            turnLevel &&
-            (turn.idx === state.turnIdx ||
-              group.toolInteractions.some(
-                (interaction) => interaction.result?.idx === state.turnIdx,
-              ));
+          const row = rows[vi.index];
+          const active = isActiveRow(row);
           const dimmed = turnLevel && !state.peek && !active;
           const remeasure = () => {
             requestAnimationFrame(() => {
@@ -90,7 +86,7 @@ export function TracePane() {
           };
           return (
             <div
-              key={turn.id}
+              key={row.key}
               data-index={vi.index}
               ref={virtualizer.measureElement}
               style={{
@@ -100,17 +96,24 @@ export function TracePane() {
                 width: "100%",
                 transform: `translateY(${vi.start}px)`,
               }}
-              className="border-b border-slate-200 dark:border-slate-800"
+              className={cn("py-1.5", row.kind !== "section-header" && row.indent && "pl-6")}
             >
-              <TurnCard
-                turn={turn}
-                active={active}
-                dimmed={dimmed}
-                onSelect={() => turn.labelable && focusTurnByIdx(turn.idx)}
-                toolInteractions={group.toolInteractions}
-                showToolResults={!turnLevel}
-                onSizeChange={remeasure}
-              />
+              {row.kind === "section-header" && <AgentSectionHeader agent={row.agent} />}
+              {row.kind === "handoff" && <HandoffDivider turn={row.turn} />}
+              {row.kind === "event" && <EventCard turn={row.turn} dimmed={dimmed} />}
+              {row.kind === "turn" && (
+                <TurnCard
+                  turn={row.turn}
+                  active={active}
+                  dimmed={dimmed}
+                  onSelect={() => row.turn.labelable && focusTurnByIdx(row.turn.idx)}
+                  activity={row.activity}
+                  activeTurnIdx={state.turnIdx}
+                  onSelectTurn={focusTurnByIdx}
+                  forceExpandAll={toolCallsExpanded}
+                  onSizeChange={remeasure}
+                />
+              )}
             </div>
           );
         })}

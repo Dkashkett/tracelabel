@@ -6,11 +6,29 @@ from tracelabel.errors import UserError
 from .hashing import canonical_json
 from .models import DocumentIn, Json, TraceIn
 
-VALID_ROLES = ("system", "user", "assistant", "tool")
+VALID_ROLES = ("system", "user", "assistant", "tool", "event")
+VALID_KINDS = ("handoff", "retrieval", "agent", "guardrail", "span")
+VALID_STATUSES = ("ok", "error")
 DOCUMENT_CONTENT_TYPES = ("text", "json", "html", "markdown")
 TRACE_KEYS = {"format_version", "id", "source", "metadata", "messages", "raw"}
 DOCUMENT_KEYS = {"format_version", "id", "source", "metadata", "content", "content_type", "raw"}
-MESSAGE_KEYS = {"role", "content", "tool_calls", "tool_call_id", "name", "metadata", "raw"}
+MESSAGE_KEYS = {
+    "role",
+    "content",
+    "tool_calls",
+    "tool_call_id",
+    "name",
+    "metadata",
+    "raw",
+    "span_id",
+    "parent_id",
+    "agent",
+    "kind",
+    "started_at",
+    "duration_ms",
+    "status",
+    "status_message",
+}
 
 GENERIC_FIXED_EXAMPLE = (
     '{"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function",'
@@ -131,17 +149,17 @@ class CtfValidator:
             )
 
         format_version = value.get("format_version", 1)
-        if format_version != 1:
-            if isinstance(format_version, int) and format_version > 1:
+        if format_version not in (1, 2):
+            if isinstance(format_version, int) and format_version > 2:
                 raise fail(
-                    "This build understands format_version 1. Please upgrade tracelabel.",
+                    "This build understands format_version 1 or 2. Please upgrade tracelabel.",
                     f"format_version is {format_version}, which is newer than this build "
                     "understands.",
                     value,
                 )
             raise fail(
-                "format_version, if present, must equal 1.",
-                f"format_version is {format_version!r}, which is not 1.",
+                "format_version, if present, must be 1 or 2.",
+                f"format_version is {format_version!r}, which is not 1 or 2.",
                 value,
             )
 
@@ -205,11 +223,42 @@ class CtfValidator:
                 )
 
         for index, message in enumerate(messages):
+            role = message.get("role")
+            kind = message.get("kind")
+            if role == "event" and kind is None:
+                raise fail(
+                    'role "event" requires a "kind".',
+                    f'message[{index}] has role "event" but no kind.',
+                    message,
+                )
+            if role != "event" and kind is not None:
+                raise fail(
+                    '"kind" may only appear on role "event".',
+                    f"message[{index}] has role {role!r} but carries kind.",
+                    message,
+                )
+            if kind is not None and kind not in VALID_KINDS:
+                raise fail(
+                    f"Valid kinds: {', '.join(VALID_KINDS)}.",
+                    f"message[{index}] has kind {kind!r}, which is not valid.",
+                    message,
+                )
+            status = message.get("status")
+            if status is not None and status not in VALID_STATUSES:
+                raise fail(
+                    f"Valid statuses: {', '.join(VALID_STATUSES)}.",
+                    f"message[{index}] has status {status!r}, which is not valid.",
+                    message,
+                )
+
+        for index, message in enumerate(messages):
             if message.get("content") == "":
                 tool_calls = message.get("tool_calls")
-                if not isinstance(tool_calls, list) or not tool_calls:
+                has_tool_calls = isinstance(tool_calls, list) and bool(tool_calls)
+                if not has_tool_calls and message.get("role") != "event":
                     raise fail(
-                        'content may be "" only on an assistant message carrying tool_calls.',
+                        'content may be "" only on an assistant message carrying tool_calls, '
+                        "or on an event row.",
                         f"message[{index}] has empty content but no tool_calls.",
                         message,
                     )
@@ -218,8 +267,8 @@ class CtfValidator:
             return TraceIn.model_validate(value)
         except ValueError as error:
             raise fail(
-                "messages must follow the CTF v1 shape.",
-                f"trace does not match the CTF v1 schema: {error}",
+                "messages must follow the CTF schema.",
+                f"trace does not match the CTF schema: {error}",
                 value,
             ) from error
 

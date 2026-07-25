@@ -3,18 +3,18 @@ import { useState } from "react";
 const OPEN_DEPTH = 2; // collapsed beyond depth 2 by default (06 §4)
 
 function Punct({ children }: { children: string }) {
-  return <span className="text-slate-400">{children}</span>;
+  return <span className="text-ink-faint">{children}</span>;
 }
 
 function Leaf({ value }: { value: unknown }) {
   const color =
     typeof value === "string"
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-pass"
       : typeof value === "number"
-        ? "text-sky-600 dark:text-sky-400"
+        ? "text-accent-strong"
         : typeof value === "boolean"
-          ? "text-violet-600 dark:text-violet-400"
-          : "text-slate-400";
+          ? "text-warn"
+          : "text-ink-faint";
   return <span className={color}>{JSON.stringify(value)}</span>;
 }
 
@@ -52,9 +52,9 @@ function Node({ label, value, depth }: { label?: string; value: unknown; depth: 
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="cursor-pointer text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+        className="cursor-pointer text-left hover:bg-surface-raised"
       >
-        <span className="inline-block w-3 text-slate-400">{open ? "▾" : "▸"}</span>
+        <span className="inline-block w-3 text-ink-faint">{open ? "▾" : "▸"}</span>
         {key}
         <Punct>{open ? openBrace : `${openBrace}…${closeBrace} ${entries.length}`}</Punct>
       </button>
@@ -83,11 +83,11 @@ export function JsonTree({ content }: { content: string }) {
   }
 
   return (
-    <div className="font-mono text-xs leading-relaxed">
+    <div className="font-mono leading-relaxed">
       <button
         type="button"
         onClick={() => setRaw((r) => !r)}
-        className="mb-1 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-600"
+        className="mb-1 text-[10px] uppercase tracking-wide text-ink-faint hover:text-ink-muted"
       >
         {raw ? "view tree" : "view raw"}
       </button>

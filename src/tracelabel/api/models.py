@@ -48,6 +48,14 @@ class TurnOut(BaseModel):
     name: str | None = None
     labelable: bool
     metadata: dict[str, Any]
+    span_id: str | None = None
+    parent_id: str | None = None
+    agent: str | None = None
+    kind: str | None = None
+    started_at: str | None = None
+    duration_ms: float | None = None
+    status: str | None = None
+    status_message: str | None = None
 
 
 class AnnotationIn(BaseModel):

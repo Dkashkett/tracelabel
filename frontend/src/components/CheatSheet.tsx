@@ -11,6 +11,7 @@ const ROWS: [string, string][] = [
   ["s", "skip target + advance"],
   ["u", "back through visited targets (pre-filled)"],
   ["v (hold)", "peek: un-dim all turns"],
+  ["x", "expand/collapse all activity cascades"],
   ["?", "toggle this cheat sheet"],
 ];
 
@@ -20,19 +21,19 @@ export function CheatSheet() {
   // Non-focus-trapping overlay (06 §1): clicking away closes it, focus is never stolen.
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={() => setCheatOpen(false)}
     >
       <div
-        className="w-[26rem] max-w-[90vw] rounded-lg border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+        className="w-[26rem] max-w-[90vw] rounded-lg border border-line bg-surface p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Keyboard shortcuts</h2>
+          <h2 className="text-sm font-semibold text-ink">Keyboard shortcuts</h2>
           <button
             type="button"
             onClick={() => setCheatOpen(false)}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-ink-faint hover:text-ink-muted"
           >
             ✕
           </button>
@@ -40,13 +41,13 @@ export function CheatSheet() {
         <table className="w-full text-sm">
           <tbody>
             {ROWS.map(([keys, desc]) => (
-              <tr key={keys} className="border-t border-slate-100 dark:border-slate-800">
+              <tr key={keys} className="border-t border-line">
                 <td className="py-1 pr-4 align-top">
-                  <kbd className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold dark:bg-slate-800">
+                  <kbd className="rounded bg-surface-raised px-1.5 py-0.5 text-xs font-semibold text-ink">
                     {keys}
                   </kbd>
                 </td>
-                <td className="py-1 text-slate-600 dark:text-slate-300">{desc}</td>
+                <td className="py-1 text-ink-muted">{desc}</td>
               </tr>
             ))}
           </tbody>

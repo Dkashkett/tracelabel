@@ -17,7 +17,7 @@ export function OptionChips({
       data-form-control
       data-field-name={field.name}
       data-field-type="multi_select"
-      className="flex flex-wrap gap-2 rounded outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+      className="flex flex-wrap gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
     >
       {options.map((opt, i) => {
         const selected = value.includes(opt);
@@ -29,14 +29,19 @@ export function OptionChips({
             aria-checked={selected}
             onClick={() => onToggle(opt)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all",
               selected
-                ? "border-slate-800 bg-slate-800 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
+                ? "border-accent bg-accent/10 text-accent-strong"
+                : "border-line bg-surface-raised text-ink-muted hover:border-line-strong hover:bg-surface",
             )}
           >
             {i < 9 && (
-              <kbd className="rounded bg-slate-200 px-1 text-[10px] font-semibold text-slate-500 dark:bg-slate-700">
+              <kbd
+                className={cn(
+                  "rounded px-1 text-[10px] font-semibold tabular-nums",
+                  selected ? "bg-accent/15 text-accent-strong" : "bg-surface-inset text-ink-faint",
+                )}
+              >
                 {i + 1}
               </kbd>
             )}

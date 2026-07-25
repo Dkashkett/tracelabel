@@ -1,11 +1,54 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Warm-graphite surfaces (a few points shifted toward red/orange, not pure neutral) */
+    --bg: 21 18 17;
+    --surface: 30 26 25;
+    --surface-raised: 37 32 30;
+    --surface-inset: 17 15 14;
+
+    /* Ink */
+    --ink: 240 235 231;
+    --ink-muted: 180 171 165;
+    --ink-faint: 128 119 113;
+
+    /* Lines */
+    --line: 58 51 48;
+    --line-strong: 82 73 69;
+
+    /* Clay accent */
+    --accent: 214 122 82;
+    --accent-strong: 231 143 101;
+    --accent-fg: 30 16 10;
+    --accent-glow: 214 122 82;
+
+    /* Semantics */
+    --pass: 52 199 130;
+    --fail: 244 94 94;
+    --warn: 232 168 74;
+  }
+
   html,
   body,
   #root {
     height: 100%;
+  }
+
+  body {
+    background-color: rgb(var(--bg));
+    color: rgb(var(--ink));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
