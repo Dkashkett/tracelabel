@@ -1,14 +1,10 @@
-import type {
-  AnnotationIn,
-  AnnotationOut,
-  Progress,
-  QueueEntry,
-  SessionInfo,
-  TraceDetail,
-} from "./types";
-import { mockApi } from "@/mocks/fixtures";
+// The original single-task labeling API (session/queue/trace/annotations/progress).
+// Paths and shapes are unchanged from the pre-refactor client.ts — only the file
+// location moved, per docs/refactor-plan.md §3.
+import { json } from "./http";
+import type { AnnotationIn, AnnotationOut, Progress, QueueEntry, SessionInfo, TraceDetail } from "../types";
 
-export interface Api {
+export interface LabelingApi {
   getSession(): Promise<SessionInfo>;
   getQueue(): Promise<QueueEntry[]>;
   getTrace(traceId: string): Promise<TraceDetail>;
@@ -16,21 +12,8 @@ export interface Api {
   getProgress(): Promise<Progress>;
 }
 
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      detail = ((await res.json()) as { detail?: string }).detail ?? detail;
-    } catch {
-      // non-JSON error body; keep statusText
-    }
-    throw new Error(detail);
-  }
-  return (await res.json()) as T;
-}
-
 // Fetch base is same-origin (""); vite.config.ts proxies /api → 127.0.0.1:8377 in dev.
-const httpApi: Api = {
+export const httpLabelingApi: LabelingApi = {
   getSession: () => fetch("/api/session").then(json<SessionInfo>),
   getQueue: () => fetch("/api/queue").then(json<QueueEntry[]>),
   getTrace: (traceId) =>
@@ -44,6 +27,6 @@ const httpApi: Api = {
   getProgress: () => fetch("/api/progress").then(json<Progress>),
 };
 
-const MOCK = import.meta.env.VITE_MOCK === "1";
-
-export const api: Api = MOCK ? mockApi : httpApi;
+// Mock implementation lives in mocks/labeling.ts (owned there); re-exported here so this
+// module is the one-stop place to see both implementations of LabelingApi.
+export { mockLabelingApi } from "@/mocks/labeling";
