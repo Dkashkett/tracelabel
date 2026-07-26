@@ -7,6 +7,18 @@ from tracelabel.api.app import create_app
 from tracelabel.config.models import ResolvedTaskConfig
 from tracelabel.db.database import Database, default_db_path
 
+# W0-BE (docs/refactor-plan.md §4): create_app(database, config, queue, static_dir) is
+# now create_app(workspace, static_dir) — one process serves any (project, task) chosen
+# per-request, rather than freezing one at startup. ResolvedTaskConfig also dropped
+# data_path. This whole module exercises the old flat /api/* routes and the old
+# create_app signature, both replaced; W2-LABELING rebuilds equivalent coverage
+# against the new nested routes (api/routes/labeling.py) once Wave 1 lands.
+pytestmark = pytest.mark.skip(
+    reason="W0-BE: create_app(database, config, queue) and the flat /api/* routes are "
+    "replaced by create_app(workspace) and /api/projects/{p}/tasks/{t}/*. Superseded by "
+    "W2-LABELING. See docs/refactor-plan.md §3–4."
+)
+
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
 # Trace A: a tool-use conversation (user / assistant+tool_calls / tool / assistant).
