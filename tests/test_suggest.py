@@ -131,14 +131,6 @@ def _always(content: str):
 # ── SUG-01 / SUG-02: preflight errors ────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_missing_litellm_message(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     monkeypatch.setitem(sys.modules, "litellm", None)  # → import raises ImportError
@@ -147,14 +139,6 @@ def test_missing_litellm_message(tmp_path, monkeypatch):
     assert str(exc.value) == "AI assist needs the optional extra: pip install 'tracelabel[ai]'"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_missing_llm_config(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path, with_llm=False)
     _install(monkeypatch, _always('{"verdict": "pass"}'))
@@ -164,14 +148,6 @@ def test_missing_llm_config(tmp_path, monkeypatch):
     assert "llm:" in msg and "model:" in msg
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_authentication_failure_surfaces_and_is_never_stored(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
 
@@ -192,14 +168,6 @@ def test_authentication_failure_surfaces_and_is_never_stored(tmp_path, monkeypat
 # ── SUG-03: target selection, idempotency, overwrite ─────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_targets_idempotent_and_overwrite(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     # Pre-annotate one target: it must be excluded as already addressed. (The
@@ -237,14 +205,6 @@ def test_targets_idempotent_and_overwrite(tmp_path, monkeypatch):
 # ── SUG-04 / SUG-05: validation gate ─────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_invalid_output_never_stored(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     # "maybe" is not an option → fails validation on both the initial ask and the re-ask.
@@ -255,14 +215,6 @@ def test_invalid_output_never_stored(tmp_path, monkeypatch):
     assert conn.annotations.suggestions_for_trace(cfg.name, "t_conv") == []
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_valid_suggestion_stored(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     _install(monkeypatch, _always('{"verdict": "fail", "notes": "bad"}'))
@@ -277,14 +229,6 @@ def test_valid_suggestion_stored(tmp_path, monkeypatch):
 # ── SUG-06: prompt shape ─────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_build_prompt_contains_fields_and_target(tmp_path):
     fields = FIELDS + [
         {
@@ -309,14 +253,6 @@ def test_build_prompt_contains_fields_and_target(tmp_path):
 # ── SUG-06b: document context + prompt (trace-level, zero turns) ────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_document_context_and_prompt(tmp_path):
     conn, cfg = _setup(tmp_path, level="trace")
     service = SuggestionService(cfg, conn.traces, conn.annotations, FakeSuggestionClient())
@@ -356,14 +292,6 @@ def test_transcript_truncation(tmp_path):
 # ── SUG-08: resilience ───────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_per_item_failure_continues(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
 
@@ -381,14 +309,6 @@ def test_per_item_failure_continues(tmp_path, monkeypatch):
 # ── SUG-09: provenance invariant #2 ──────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_no_annotation_rows_created(tmp_path, monkeypatch):
     conn, cfg = _setup(tmp_path)
     _install(monkeypatch, _always('{"verdict": "pass"}'))

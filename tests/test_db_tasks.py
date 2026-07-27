@@ -2,12 +2,12 @@ import json
 
 import pytest
 
+from helpers import make_task_spec
 from tracelabel.config.models import LLMConfig, ResolvedTaskConfig, TaskSpec
 from tracelabel.config.resolver import compat_hash
 from tracelabel.db.database import Database, default_db_path
+from tracelabel.db.tasks import full_schema_hash as compute_schema_hash
 from tracelabel.errors import NotFoundError, UserError
-
-from .helpers import make_task_spec
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -216,52 +216,71 @@ def test_open_level_mismatch(conn):
     assert "level=turn" in str(ei.value)
 
 
+_DEFAULT_FIELDS = [{"name": "verdict", "type": "single_select", "options": ["pass", "fail"]}]
+_OTHER_FIELDS = [{"name": "quality", "type": "text"}]
+_THIRD_FIELDS = [{"name": "notes", "type": "text"}]
+
+
 def test_open_no_op_when_schema_unchanged(conn):
-    conn.tasks.open(make_cfg(name="t", schema_hash="h1"), assume_yes=True)
-    conn.tasks.open(make_cfg(name="t", schema_hash="h1"), assume_yes=True)
-    assert conn.tasks.get("t")["schema_hash"] == "h1"
+    real_hash = compute_schema_hash(_DEFAULT_FIELDS)
+    conn.tasks.open(make_cfg(name="t", schema_hash=real_hash), assume_yes=True)
+    conn.tasks.open(make_cfg(name="t", schema_hash=real_hash), assume_yes=True)
+    assert conn.tasks.get("t")["schema_hash"] == real_hash
 
 
 def test_open_drift_declined_aborts(conn):
-    conn.tasks.open(make_cfg(name="t", schema_hash="h1"), assume_yes=True)
+    conn.tasks.open(
+        make_cfg(name="t", schema_hash=compute_schema_hash(_DEFAULT_FIELDS)), assume_yes=True
+    )
     with pytest.raises(UserError) as ei:
         conn.tasks.open(
-            make_cfg(name="t", schema_hash="h2"),
+            make_cfg(
+                name="t", schema_hash=compute_schema_hash(_OTHER_FIELDS), fields=_OTHER_FIELDS
+            ),
             assume_yes=False,
             confirm=lambda _prompt: False,
         )
     assert "Aborted" in str(ei.value)
-    assert conn.tasks.get("t")["schema_hash"] == "h1"
+    assert conn.tasks.get("t")["schema_hash"] == compute_schema_hash(_DEFAULT_FIELDS)
 
 
 def test_open_drift_declined_without_confirm_callback_also_aborts(conn):
     """No stdin fallback: assume_yes=False and no confirm callback must not block on
     input() — it raises instead."""
-    conn.tasks.open(make_cfg(name="t", schema_hash="h1"), assume_yes=True)
+    conn.tasks.open(
+        make_cfg(name="t", schema_hash=compute_schema_hash(_DEFAULT_FIELDS)), assume_yes=True
+    )
     with pytest.raises(UserError):
-        conn.tasks.open(make_cfg(name="t", schema_hash="h2"), assume_yes=False)
-    assert conn.tasks.get("t")["schema_hash"] == "h1"
+        conn.tasks.open(
+            make_cfg(
+                name="t", schema_hash=compute_schema_hash(_OTHER_FIELDS), fields=_OTHER_FIELDS
+            ),
+            assume_yes=False,
+        )
+    assert conn.tasks.get("t")["schema_hash"] == compute_schema_hash(_DEFAULT_FIELDS)
 
 
 def test_open_drift_confirmed_updates(conn):
-    conn.tasks.open(make_cfg(name="t", schema_hash="h1"), assume_yes=True)
-    new_fields = [{"name": "quality", "type": "text"}]
     conn.tasks.open(
-        make_cfg(name="t", schema_hash="h2", fields=new_fields),
+        make_cfg(name="t", schema_hash=compute_schema_hash(_DEFAULT_FIELDS)), assume_yes=True
+    )
+    new_fields = _OTHER_FIELDS
+    conn.tasks.open(
+        make_cfg(name="t", schema_hash=compute_schema_hash(new_fields), fields=new_fields),
         assume_yes=False,
         confirm=lambda _prompt: True,
     )
     row = conn.tasks.get("t")
-    assert row["schema_hash"] == "h2"
+    assert row["schema_hash"] == compute_schema_hash(new_fields)
     assert json.loads(row["resolved_schema"]) == new_fields
 
     # --yes also updates without a confirm callback being consulted
     conn.tasks.open(
-        make_cfg(name="t", schema_hash="h3"),
+        make_cfg(name="t", schema_hash=compute_schema_hash(_THIRD_FIELDS), fields=_THIRD_FIELDS),
         assume_yes=True,
         confirm=lambda _prompt: pytest.fail("confirm must not be called with --yes"),
     )
-    assert conn.tasks.get("t")["schema_hash"] == "h3"
+    assert conn.tasks.get("t")["schema_hash"] == compute_schema_hash(_THIRD_FIELDS)
 
 
 # ── build_queue() ────────────────────────────────────────────────────────────

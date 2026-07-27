@@ -231,14 +231,6 @@ def test_joined_turn_level_csv_columns(seeded, tmp_path):
     assert row["source"] == "jsonl"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_joined_trace_level(conn, tmp_path):
     conn.traces.import_trace(
         {
@@ -277,14 +269,6 @@ def test_joined_trace_level(conn, tmp_path):
     ]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_joined_trace_level_includes_structural_fields_when_present(conn, tmp_path):
     conn.traces.import_trace(
         {
@@ -330,14 +314,6 @@ def test_joined_trace_level_includes_structural_fields_when_present(conn, tmp_pa
     assert "agent" not in user_message
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); TaskRepository._create()'s "
-        "positional INSERT INTO tasks VALUES(...) needs a column list, which is W1-TASKS's job "
-        "(db/tasks.py is outside W0-BE's OWNS). See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_joined_trace_level_document(conn, tmp_path):
     conn.traces.import_document(
         {

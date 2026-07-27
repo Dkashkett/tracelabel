@@ -201,16 +201,6 @@ def test_import_include_all_spans_flag(tmp_path):
 # ── CLI-04: tasks list table ──────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
 def test_tasks_list_output(tmp_path):
     data = _write_data(tmp_path)
     db_path = default_db_path(tmp_path)
@@ -504,16 +494,6 @@ def test_suggest_imports_target_file_and_scopes_to_it(tmp_path, monkeypatch):
 # ── CLI-07: errors → stderr, data → stdout ────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
 def test_stderr_stdout_separation(tmp_path):
     data = _write_data(tmp_path)
     db_path = default_db_path(tmp_path)

@@ -322,15 +322,6 @@ def test_turn_rows_verbatim_and_ids(conn):
 # ── DB-08 ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_open_task_seed_only_when_shuffle(conn, tmp_path):
     conn.tasks.open(make_cfg(tmp_path, name="seq", shuffle=False), assume_yes=True)
     conn.tasks.open(make_cfg(tmp_path, name="shuf", shuffle=True), assume_yes=True)
@@ -341,15 +332,6 @@ def test_open_task_seed_only_when_shuffle(conn, tmp_path):
 # ── DB-09 ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_open_task_level_mismatch(conn, tmp_path):
     conn.tasks.open(make_cfg(tmp_path, name="t", level="turn"), assume_yes=True)
     with pytest.raises(UserError) as ei:
@@ -415,15 +397,6 @@ def test_drift_confirmed_updates(conn, tmp_path):
 # ── DB-11 ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_upsert_annotation_lww(conn, tmp_path):
     conn.tasks.open(make_cfg(tmp_path, name="t"), assume_yes=True)
 
@@ -463,15 +436,6 @@ def test_upsert_annotation_lww(conn, tmp_path):
 # ── DB-12 ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_upsert_suggestion_replaces(conn, tmp_path):
     conn.tasks.open(make_cfg(tmp_path, name="t"), assume_yes=True)
 
@@ -496,15 +460,6 @@ def test_upsert_suggestion_replaces(conn, tmp_path):
 # ── DB-13 ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_build_queue_stable_across_reopen(tmp_path):
     path = default_db_path(tmp_path)
     conn = Database(path)
@@ -523,15 +478,6 @@ def test_build_queue_stable_across_reopen(tmp_path):
     assert q1 != [f"t{i:02d}" for i in range(20)]  # actually shuffled
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_build_queue_scoped_to_trace_ids_in_given_order(conn, tmp_path):
     for i in range(5):
         conn.traces.import_trace(ctf_trace(id=f"t{i:02d}"), "jsonl")
@@ -547,15 +493,6 @@ def test_build_queue_scoped_to_trace_ids_in_given_order(conn, tmp_path):
     assert conn.tasks.build_queue("t") == whole
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_build_queue_shuffle_applies_on_top_of_scoped_list(tmp_path):
     path = default_db_path(tmp_path)
     conn = Database(path)
@@ -624,15 +561,6 @@ def test_project_lock_context_cleans_up_on_error(tmp_path):
 # ── DB-15 ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_target_counts_turn_and_trace_level(conn, tmp_path):
     # two traces, each with one assistant (labelable) turn
     for tid in ("ta", "tb"):
@@ -682,15 +610,6 @@ def test_target_counts_turn_and_trace_level(conn, tmp_path):
     assert tcounts["tb"] == (1, 0, 1)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_unaddressed_and_without_suggestion(conn, tmp_path):
     for tid in ("ta", "tb"):
         conn.traces.import_trace(
@@ -729,15 +648,6 @@ def test_unaddressed_and_without_suggestion(conn, tmp_path):
     assert conn.annotations.targets_without_suggestion("t", ["ta#1", "tb#1"]) == ["tb#1"]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: tasks table gained v3 columns (migrations.py); "
-        "TaskRepository._create()'s positional INSERT breaks — fixing it is "
-        "W1-TASKS's job (db/tasks.py is outside W0-BE's OWNS). "
-        "See docs/refactor-plan.md §4 W1-TASKS."
-    ),
-    strict=True,
-)
 def test_unaddressed_targets_scoped_to_trace_ids(conn, tmp_path):
     for tid in ("ta", "tb"):
         conn.traces.import_trace(
