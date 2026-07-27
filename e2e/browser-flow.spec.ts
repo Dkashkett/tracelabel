@@ -50,6 +50,9 @@ test("browser flow: create project, import a source, create a task, save its rub
   // underscores — no hyphens).
   const taskName = "browser_flow_task";
   await page.getByPlaceholder("escalation-risk").fill(taskName);
+  // NewTaskDialog defaults to level="turn"; the label view's totals below are
+  // counted in traces (one target per trace), so select "Trace" explicitly.
+  await page.getByLabel("Level").selectOption("trace");
   // Leave the "Pass / fail" preset (the dialog's default choice) selected — its single
   // required `verdict` field is exactly what the label-view steps below need.
   await page.getByRole("button", { name: "Create task" }).click();
@@ -71,6 +74,10 @@ test("browser flow: create project, import a source, create a task, save its rub
   await expect(page.getByText("0/3", { exact: true })).toBeVisible();
 
   await page.keyboard.press("1"); // verdict = pass, the only required field
-  await page.keyboard.press("Control+Enter");
+  // Ctrl+Enter is only needed to commit *from inside a textarea* (a bare Enter there
+  // is a newline, not a commit — see smoke.spec.ts); this task has no text field, so
+  // focus never leaves the radiogroup and a bare Enter commits, matching the on-screen
+  // "Enter · commit" hint.
+  await page.keyboard.press("Enter");
   await expect(page.getByText("1/3", { exact: true })).toBeVisible();
 });
