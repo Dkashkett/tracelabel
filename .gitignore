@@ -47,3 +47,4 @@ frontend/dist/
 .DS_Store
 .idea/
 *.iml
+.claude/worktrees/
