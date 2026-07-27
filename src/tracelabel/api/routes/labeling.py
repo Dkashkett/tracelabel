@@ -1,14 +1,17 @@
-"""The labeling view's routes plus the Phase 2/3 data views, all rehomed under
-/api/projects/{project}/tasks/{task}/...
+"""The labeling view's routes, rehomed under /api/projects/{project}/tasks/{task}/...
 
-Stub for Wave 0 (owned by W2-LABELING) — every handler below returns 501. The five
-existing labeling models (SessionInfo, QueueEntry, TraceDetail, AnnotationIn/Out,
-Progress) keep their field lists; only the path changes, from the old flat
-/api/session etc.
+Each handler is a thin wrapper over ``LabelingService`` (``api/labeling.py``), reached
+via the ``TaskContext`` dependency (``api/deps.py``), which resolves the (project,
+task) named in the URL path for this request.
+
+``GET .../items`` (Phase 2, data manager) and ``GET .../stats`` (Phase 3, eval loop)
+are intentionally left as 501 stubs — out of scope for this wave, per
+docs/refactor-plan.md §3.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from tracelabel.api.deps import TaskContext, get_task_context
 from tracelabel.api.models import (
     AnnotationIn,
     AnnotationOut,
@@ -24,28 +27,40 @@ router = APIRouter(prefix="/api/projects/{project}/tasks/{task}", tags=["labelin
 
 
 @router.get("/session", response_model=SessionInfo)
-async def get_session(project: str, task: str) -> SessionInfo:
-    raise HTTPException(status_code=501, detail="not implemented yet")
+async def get_session(
+    context: TaskContext = Depends(get_task_context),  # noqa: B008 - FastAPI's DI idiom
+) -> SessionInfo:
+    return context.labeling_service.session()
 
 
 @router.get("/queue", response_model=list[QueueEntry])
-async def get_queue(project: str, task: str) -> list[QueueEntry]:
-    raise HTTPException(status_code=501, detail="not implemented yet")
+async def get_queue(
+    context: TaskContext = Depends(get_task_context),  # noqa: B008 - FastAPI's DI idiom
+) -> list[QueueEntry]:
+    return context.labeling_service.queue()
 
 
 @router.get("/traces/{trace_id}", response_model=TraceDetail)
-async def get_trace(project: str, task: str, trace_id: str) -> TraceDetail:
-    raise HTTPException(status_code=501, detail="not implemented yet")
+async def get_trace(
+    trace_id: str,
+    context: TaskContext = Depends(get_task_context),  # noqa: B008 - FastAPI's DI idiom
+) -> TraceDetail:
+    return context.labeling_service.trace_detail(trace_id)
 
 
 @router.put("/annotations", response_model=AnnotationOut)
-async def put_annotation(project: str, task: str, annotation: AnnotationIn) -> AnnotationOut:
-    raise HTTPException(status_code=501, detail="not implemented yet")
+async def put_annotation(
+    annotation: AnnotationIn,
+    context: TaskContext = Depends(get_task_context),  # noqa: B008 - FastAPI's DI idiom
+) -> AnnotationOut:
+    return context.labeling_service.put_annotation(annotation)
 
 
 @router.get("/progress", response_model=Progress)
-async def get_progress(project: str, task: str) -> Progress:
-    raise HTTPException(status_code=501, detail="not implemented yet")
+async def get_progress(
+    context: TaskContext = Depends(get_task_context),  # noqa: B008 - FastAPI's DI idiom
+) -> Progress:
+    return context.labeling_service.progress()
 
 
 @router.get("/items", response_model=ItemPage)

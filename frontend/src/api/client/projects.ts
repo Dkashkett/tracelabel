@@ -30,8 +30,8 @@ export const mockProjectsApi: ProjectsApi = {
   getProject: async (slug) => {
     const project = mockProjects.getProject(slug);
     if (!project) throw new Error(`unknown project '${slug}'`);
-    const { sources, ...summary } = project;
-    return { ...summary, sources, tasks: listTasks(slug) };
+    const { source_count: _sourceCount, task_count: _taskCount, ...rest } = project;
+    return { ...rest, tasks: listTasks(slug) };
   },
   deleteProject: async (slug) => {
     mockProjects.deleteProject(slug);

@@ -30,6 +30,7 @@ class Database:
 
     def __init__(self, path: Path, *, clock: Clock | None = None) -> None:
         from .annotations import AnnotationRepository
+        from .sources import SourceRepository
         from .tasks import TaskRepository
         from .traces import TraceRepository
 
@@ -59,6 +60,11 @@ class Database:
             resolved_clock,
         )
         self.annotations: AnnotationRepository = AnnotationRepository(
+            self.connection,
+            self.transaction,
+            resolved_clock,
+        )
+        self.sources: SourceRepository = SourceRepository(
             self.connection,
             self.transaction,
             resolved_clock,
