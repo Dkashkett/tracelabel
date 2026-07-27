@@ -55,7 +55,7 @@ function renderAt(path: string) {
 describe("router shell", () => {
   it("renders the ProjectList placeholder at /", () => {
     renderAt("/");
-    expect(screen.getByRole("heading", { name: "Projects" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Projects" })).toBeTruthy();
   });
 
   it("renders the real labeling UI at /p/:project/t/:task/label", async () => {
@@ -66,6 +66,6 @@ describe("router shell", () => {
 
     renderAt("/p/demo/t/answer-quality/label");
 
-    expect(await screen.findByText("answer-quality")).toBeInTheDocument();
+    expect(await screen.findByText("answer-quality")).toBeTruthy();
   });
 });
