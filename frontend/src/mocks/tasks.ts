@@ -2,11 +2,18 @@
 // suggestion runs. Depends on mocks/projects.ts (one-directional: tasks know about
 // projects, projects don't know about tasks) and mocks/imports.ts for the shared
 // job store that suggestion runs also use.
+//
+// The backend's TaskDetail/TaskSummary don't carry a labeled/skipped breakdown
+// (TaskSummary only has `addressed`, the sum of both) — but the mock item/stats
+// endpoints (Phase 2/3) want that breakdown to fabricate believable data. So each
+// mock task keeps its progress counts in a side table (`progressStore`), separate
+// from the public `TaskDetail` shape, rather than smuggling extra fields onto it.
 import type {
   FieldDef,
   ItemPage,
   ItemSummary,
   JobRef,
+  RetypedFieldOut,
   SchemaImpactOut,
   SchemaOut,
   SchemaPatch,
@@ -21,6 +28,13 @@ import { bumpTaskCount, getProject } from "@/mocks/projects";
 import { createJob } from "@/mocks/imports";
 
 const NOW = "2026-07-01T12:00:00Z";
+
+interface MockProgress {
+  unit: "turns" | "traces";
+  total: number;
+  labeled: number;
+  skipped: number;
+}
 
 const PASS_FAIL_FIELDS: FieldDef[] = [
   {
@@ -45,19 +59,42 @@ function makeTask(overrides: Partial<TaskDetail> & Pick<TaskDetail, "name">): Ta
     level: "turn",
     annotator: "dan",
     created_at: NOW,
-    progress: { unit: "turns", total: 0, labeled: 0, skipped: 0 },
+    updated_at: NOW,
     fields: PASS_FAIL_FIELDS,
     label_roles: ["assistant"],
     shuffle: false,
     schema_hash: "sha256:demo0000",
     compat_hash: "sha256:compat0000",
     queue_scope: { type: "all" },
-    llm: null,
+    llm_model: null,
+    llm_temperature: null,
+    llm_max_tokens: null,
     suggest_instructions: null,
     review_of: null,
     review_labels_from: "judge",
     ...overrides,
   };
+}
+
+const progressStore = new Map<string, MockProgress>();
+
+function progressKey(projectSlug: string, name: string): string {
+  return `${projectSlug}/${name}`;
+}
+
+function setProgress(projectSlug: string, name: string, progress: MockProgress): void {
+  progressStore.set(progressKey(projectSlug, name), progress);
+}
+
+function getProgress(projectSlug: string, name: string): MockProgress {
+  return (
+    progressStore.get(progressKey(projectSlug, name)) ?? {
+      unit: "turns",
+      total: 0,
+      labeled: 0,
+      skipped: 0,
+    }
+  );
 }
 
 const tasks = new Map<string, Map<string, TaskDetail>>([
@@ -68,7 +105,6 @@ const tasks = new Map<string, Map<string, TaskDetail>>([
         "escalation-risk",
         makeTask({
           name: "escalation-risk",
-          progress: { unit: "turns", total: 412, labeled: 260, skipped: 12 },
           fields: [
             {
               name: "verdict",
@@ -93,7 +129,6 @@ const tasks = new Map<string, Map<string, TaskDetail>>([
           name: "response-quality",
           level: "trace",
           annotator: "priya",
-          progress: { unit: "traces", total: 189, labeled: 40, skipped: 0 },
         }),
       ],
     ]),
@@ -106,7 +141,6 @@ const tasks = new Map<string, Map<string, TaskDetail>>([
         makeTask({
           name: "judge-agreement",
           annotator: "dan",
-          progress: { unit: "turns", total: 58, labeled: 58, skipped: 0 },
           review_of: "gpt-4o",
           review_labels_from: "judge",
         }),
@@ -114,6 +148,10 @@ const tasks = new Map<string, Map<string, TaskDetail>>([
     ]),
   ],
 ]);
+
+setProgress("support-triage", "escalation-risk", { unit: "turns", total: 412, labeled: 260, skipped: 12 });
+setProgress("support-triage", "response-quality", { unit: "traces", total: 189, labeled: 40, skipped: 0 });
+setProgress("eval-harness", "judge-agreement", { unit: "turns", total: 58, labeled: 58, skipped: 0 });
 
 function taskMap(projectSlug: string): Map<string, TaskDetail> {
   let m = tasks.get(projectSlug);
@@ -124,35 +162,42 @@ function taskMap(projectSlug: string): Map<string, TaskDetail> {
   return m;
 }
 
-function toSummary(task: TaskDetail): TaskSummary {
-  const { name, level, annotator, created_at, progress } = task;
-  return { name, level, annotator, created_at, progress };
+function toSummary(projectSlug: string, task: TaskDetail): TaskSummary {
+  const progress = getProgress(projectSlug, task.name);
+  return {
+    name: task.name,
+    level: task.level,
+    schema_hash: task.schema_hash,
+    compat_hash: task.compat_hash,
+    updated_at: task.updated_at,
+    total: progress.total,
+    addressed: progress.labeled + progress.skipped,
+  };
 }
 
 export function listTasks(projectSlug: string): TaskSummary[] {
-  return [...taskMap(projectSlug).values()].map(toSummary);
+  return [...taskMap(projectSlug).values()].map((task) => toSummary(projectSlug, task));
 }
 
 export function getTask(projectSlug: string, name: string): TaskDetail | undefined {
   return taskMap(projectSlug).get(name);
 }
 
+const DEFAULT_FIELDS: FieldDef[] = [{ name: "notes", label: "Notes", type: "text", required: true }];
+
 export function createTask(projectSlug: string, input: TaskCreate): TaskDetail {
   if (!getProject(projectSlug)) throw new Error(`unknown project '${projectSlug}'`);
   const task = makeTask({
     name: input.name,
     level: input.level,
-    fields: input.fields,
+    fields: input.fields ?? DEFAULT_FIELDS,
     label_roles: input.label_roles ?? ["assistant"],
     shuffle: input.shuffle ?? false,
     annotator: input.annotator ?? "dan",
     queue_scope: input.queue_scope ?? { type: "all" },
-    llm: input.llm ?? null,
-    suggest_instructions: input.suggest_instructions ?? null,
-    review_of: input.review_of ?? null,
-    review_labels_from: input.review_labels_from ?? "judge",
   });
   taskMap(projectSlug).set(task.name, task);
+  setProgress(projectSlug, task.name, { unit: "turns", total: 0, labeled: 0, skipped: 0 });
   bumpTaskCount(projectSlug, 1);
   return task;
 }
@@ -160,7 +205,7 @@ export function createTask(projectSlug: string, input: TaskCreate): TaskDetail {
 export function patchTask(projectSlug: string, name: string, patch: TaskPatch): TaskDetail {
   const task = getTask(projectSlug, name);
   if (!task) throw new Error(`unknown task '${projectSlug}/${name}'`);
-  Object.assign(task, patch);
+  Object.assign(task, patch, { updated_at: new Date().toISOString() });
   return task;
 }
 
@@ -182,23 +227,23 @@ export function analyzeSchemaImpact(
   const oldNames = new Set(task.fields.map((f) => f.name));
   const newByName = new Map(patch.fields.map((f) => [f.name, f]));
   const removedFields = [...oldNames].filter((n) => !newByName.has(n));
-  const retypedFields = task.fields
+  const retypedFields: RetypedFieldOut[] = task.fields
     .filter((f) => newByName.has(f.name) && newByName.get(f.name)!.type !== f.type)
-    .map((f) => f.name);
-  const removedOptions: { field: string; option: string }[] = [];
+    .map((f) => ({ name: f.name, old_type: f.type, new_type: newByName.get(f.name)!.type }));
+  const removedOptions: Record<string, string[]> = {};
   for (const oldField of task.fields) {
     const newField = newByName.get(oldField.name);
     if (!newField || !oldField.options) continue;
-    for (const option of oldField.options) {
-      if (!newField.options?.includes(option)) removedOptions.push({ field: oldField.name, option });
-    }
+    const removed = oldField.options.filter((option) => !newField.options?.includes(option));
+    if (removed.length > 0) removedOptions[oldField.name] = removed;
   }
-  const breaking = removedFields.length > 0 || retypedFields.length > 0 || removedOptions.length > 0;
+  const breaking = removedFields.length > 0 || retypedFields.length > 0 || Object.keys(removedOptions).length > 0;
+  const progress = getProgress(projectSlug, name);
   return {
     removed_fields: removedFields,
     retyped_fields: retypedFields,
     removed_options: removedOptions,
-    affected_annotations: breaking ? Math.round(task.progress.labeled * 0.6) : 0,
+    affected_annotations: breaking ? Math.round(progress.labeled * 0.6) : 0,
     breaking,
   };
 }
@@ -209,15 +254,17 @@ export function patchSchema(projectSlug: string, name: string, patch: SchemaPatc
   task.fields = patch.fields;
   task.schema_hash = `sha256:${Math.random().toString(16).slice(2, 10)}`;
   task.compat_hash = `sha256:${Math.random().toString(16).slice(2, 10)}`;
+  task.updated_at = new Date().toISOString();
   return { fields: task.fields, schema_hash: task.schema_hash, compat_hash: task.compat_hash };
 }
 
 export function getItems(projectSlug: string, name: string, page: number, pageSize: number): ItemPage {
   const task = getTask(projectSlug, name);
   if (!task) throw new Error(`unknown task '${projectSlug}/${name}'`);
-  const items: ItemSummary[] = Array.from({ length: task.progress.total }, (_, i) => {
-    const isLabeled = i < task.progress.labeled;
-    const isSkipped = !isLabeled && i < task.progress.labeled + task.progress.skipped;
+  const progress = getProgress(projectSlug, name);
+  const items: ItemSummary[] = Array.from({ length: progress.total }, (_, i) => {
+    const isLabeled = i < progress.labeled;
+    const isSkipped = !isLabeled && i < progress.labeled + progress.skipped;
     return {
       target_id: `${name}_item_${i}`,
       trace_id: `t_${i}`,
@@ -235,7 +282,7 @@ export function getItems(projectSlug: string, name: string, page: number, pageSi
 export function getStats(projectSlug: string, name: string): TaskStats {
   const task = getTask(projectSlug, name);
   if (!task) throw new Error(`unknown task '${projectSlug}/${name}'`);
-  const { total, labeled, skipped } = task.progress;
+  const { total, labeled, skipped } = getProgress(projectSlug, name);
   return {
     total,
     labeled,
@@ -250,7 +297,8 @@ export function getStats(projectSlug: string, name: string): TaskStats {
 export function startSuggestions(projectSlug: string, name: string, input: SuggestIn): JobRef {
   const task = getTask(projectSlug, name);
   if (!task) throw new Error(`unknown task '${projectSlug}/${name}'`);
-  const remaining = task.progress.total - task.progress.labeled - task.progress.skipped;
+  const { total, labeled, skipped } = getProgress(projectSlug, name);
+  const remaining = total - labeled - skipped;
   return createJob(Math.max(remaining, 1), `Suggesting with ${input.model}…`);
 }
 

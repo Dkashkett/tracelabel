@@ -138,30 +138,39 @@ export type QueueScope = { type: "all" } | { type: "filter"; [key: string]: unkn
 
 // ── GET/PATCH /api/settings ──
 export interface Settings {
-  annotator: string;
+  annotator: string | null;
   default_llm_model: string | null;
   theme: "light" | "dark" | "system";
 }
 export interface SettingsPatch {
-  annotator?: string;
+  annotator?: string | null;
   default_llm_model?: string | null;
   theme?: "light" | "dark" | "system";
 }
 
 // ── /api/projects ──
+// Note: ProjectSummary has no `notes` field on the backend (api/models.py) — only
+// ProjectDetail does. A project list screen that wants to preview notes needs the
+// detail endpoint, not the summary.
 export interface ProjectSummary {
   slug: string;
   name: string;
   created_at: string;
-  notes: string | null;
   task_count: number;
   source_count: number;
 }
 export interface ProjectCreate {
   name: string;
-  notes?: string | null;
+  notes?: string;
 }
-export interface ProjectDetail extends ProjectSummary {
+// Deliberately NOT `extends ProjectSummary` — the backend's ProjectDetail has its
+// own field list (notes instead of task_count/source_count; derive counts from
+// tasks.length/sources.length if a screen needs them).
+export interface ProjectDetail {
+  slug: string;
+  name: string;
+  created_at: string;
+  notes: string;
   tasks: TaskSummary[];
   sources: SourceOut[];
 }
@@ -177,26 +186,30 @@ export interface SourceOut {
 }
 
 // ── /api/projects/{p}/imports ──
+// `from` (not `from_`) is the wire key — mirrors api/models.py's `Field(alias="from")`.
 export interface ImportPreviewIn {
   path?: string;
-  paste?: string;
-  adapter?: string | null;
+  content?: string;
+  from?: string; // default "auto" server-side
+  as_documents?: boolean;
+  include_all_spans?: boolean;
 }
 export interface ImportPreview {
   adapter: string;
-  trace_count: number;
+  trace_count: number | null;
   traces: TraceDetail[];
   errors: string[];
+  notes: string[];
 }
 export interface ImportIn {
-  source_name: string;
   path?: string;
-  paste?: string;
-  adapter?: string | null;
-  from?: string | null;
-  skip_invalid: boolean;
-  include_all_spans: boolean;
-  on_conflict: "skip" | "replace" | "error";
+  content?: string;
+  name?: string; // display name for the resulting `sources` row
+  from?: string; // default "auto" server-side
+  on_conflict?: "fail" | "skip"; // default "fail" server-side
+  skip_invalid?: boolean;
+  as_documents?: boolean;
+  include_all_spans?: boolean;
 }
 
 // ── GET /api/jobs/{job_id}  (also the response of long-running POSTs) ──
@@ -205,10 +218,9 @@ export interface JobRef {
 }
 export interface JobStatus {
   job_id: string;
-  status: "pending" | "running" | "done" | "error";
+  state: "pending" | "running" | "done" | "error";
   progress: number;
-  total: number;
-  message: string | null;
+  result: unknown;
   error: string | null;
 }
 
@@ -216,43 +228,53 @@ export interface JobStatus {
 export interface TaskSummary {
   name: string;
   level: Level;
-  annotator: string;
-  created_at: string;
-  progress: Progress;
+  schema_hash: string;
+  compat_hash: string;
+  updated_at: string;
+  total: number;
+  addressed: number;
 }
 export interface TaskCreate {
   name: string;
   level: Level;
-  fields: FieldDef[];
-  label_roles?: string[];
+  fields?: FieldDef[] | null; // null -> server's DEFAULT_FIELDS
+  label_roles?: string[] | null;
   shuffle?: boolean;
-  annotator?: string;
-  queue_scope?: QueueScope;
-  llm?: LLMSettings | null;
-  suggest_instructions?: string | null;
-  review_of?: string | null;
-  review_labels_from?: string;
+  annotator?: string | null;
+  queue_scope?: QueueScope | null;
 }
-export interface TaskDetail extends TaskSummary {
+// Deliberately NOT `extends TaskSummary` — TaskDetail and TaskSummary diverge
+// (TaskSummary has total/addressed counts; TaskDetail has annotator/created_at/llm
+// split into three flat fields instead of a nested LLMSettings).
+export interface TaskDetail {
+  name: string;
+  level: Level;
   fields: FieldDef[];
   label_roles: string[];
   shuffle: boolean;
+  annotator: string;
   schema_hash: string;
   compat_hash: string;
   queue_scope: QueueScope;
-  llm: LLMSettings | null;
+  llm_model: string | null;
+  llm_temperature: number | null;
+  llm_max_tokens: number | null;
   suggest_instructions: string | null;
   review_of: string | null;
   review_labels_from: string;
+  created_at: string;
+  updated_at: string;
 }
 export interface TaskPatch {
-  level?: Level;
-  label_roles?: string[];
-  shuffle?: boolean;
-  annotator?: string;
-  queue_scope?: QueueScope;
-  llm?: LLMSettings | null;
+  annotator?: string | null;
+  shuffle?: boolean | null;
+  queue_scope?: QueueScope | null;
+  llm_model?: string | null;
+  llm_temperature?: number | null;
+  llm_max_tokens?: number | null;
   suggest_instructions?: string | null;
+  review_of?: string | null;
+  review_labels_from?: string | null;
 }
 
 // ── /api/projects/{p}/tasks/{t}/schema ──
@@ -264,11 +286,16 @@ export interface SchemaOut {
 export interface SchemaPatch {
   fields: FieldDef[];
 }
-// 409 response when a PATCH would orphan existing annotations without ?confirm=1.
+export interface RetypedFieldOut {
+  name: string;
+  old_type: string;
+  new_type: string;
+}
+// 409 response when a PATCH would orphan existing annotations without ?confirm=true.
 export interface SchemaImpactOut {
   removed_fields: string[];
-  retyped_fields: string[];
-  removed_options: { field: string; option: string }[];
+  retyped_fields: RetypedFieldOut[];
+  removed_options: Record<string, string[]>;
   affected_annotations: number;
   breaking: boolean;
 }

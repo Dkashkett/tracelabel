@@ -4,6 +4,7 @@
 import type { ProjectCreate, ProjectSummary, SourceOut } from "@/api/types";
 
 interface ProjectRecord extends ProjectSummary {
+  notes: string;
   sources: SourceOut[];
 }
 
@@ -45,7 +46,7 @@ const projects = new Map<string, ProjectRecord>([
       slug: "eval-harness",
       name: "Eval Harness",
       created_at: "2026-06-15T08:00:00Z",
-      notes: null,
+      notes: "",
       task_count: 1,
       source_count: 1,
       sources: [
@@ -66,7 +67,7 @@ const projects = new Map<string, ProjectRecord>([
       slug: "new-project",
       name: "New Project",
       created_at: "2026-07-20T00:00:00Z",
-      notes: null,
+      notes: "",
       task_count: 0,
       source_count: 0,
       sources: [],
@@ -91,7 +92,7 @@ function slugify(name: string): string {
 }
 
 export function listProjects(): ProjectSummary[] {
-  return [...projects.values()].map(({ sources: _sources, ...summary }) => summary);
+  return [...projects.values()].map(({ sources: _sources, notes: _notes, ...summary }) => summary);
 }
 
 export function getProject(slug: string): ProjectRecord | undefined {
@@ -104,13 +105,13 @@ export function createProject(input: ProjectCreate): ProjectSummary {
     slug,
     name: input.name,
     created_at: new Date().toISOString(),
-    notes: input.notes ?? null,
+    notes: input.notes ?? "",
     task_count: 0,
     source_count: 0,
     sources: [],
   };
   projects.set(slug, record);
-  const { sources: _sources, ...summary } = record;
+  const { sources: _sources, notes: _notes, ...summary } = record;
   return summary;
 }
 
