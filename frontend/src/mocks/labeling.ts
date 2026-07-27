@@ -346,15 +346,17 @@ const delay = <T>(v: T): Promise<T> => new Promise((r) => setTimeout(() => r(v),
 // Deep-ish clone so consumers can't mutate the mock store except through putAnnotation.
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+// project/task are unused here — the mock is a single fixed fixture regardless of
+// which project/task the caller asked for, matching the pre-refactor mock's scope.
 export const mockLabelingApi: LabelingApi = {
   getSession: () => delay(clone(session)),
   getQueue: () => delay(order.map(queueEntry)),
-  getTrace: (traceId) => {
+  getTrace: (_project, _task, traceId) => {
     const td = traces[traceId];
     if (!td) return Promise.reject(new Error(`unknown trace '${traceId}'`));
     return delay(clone(td));
   },
-  putAnnotation: (ann: AnnotationIn) => {
+  putAnnotation: (_project, _task, ann: AnnotationIn) => {
     const td = traces[traceIdOf(ann.target_id)];
     if (!td) return Promise.reject(new Error(`unknown target '${ann.target_id}'`));
     const prev = td.annotations[ann.target_id];
@@ -370,7 +372,7 @@ export const mockLabelingApi: LabelingApi = {
     td.annotations[ann.target_id] = out;
     return delay(clone(out));
   },
-  getProgress: (): Promise<Progress> => {
+  getProgress: (_project, _task): Promise<Progress> => {
     let total = 0;
     let labeled = 0;
     let skipped = 0;

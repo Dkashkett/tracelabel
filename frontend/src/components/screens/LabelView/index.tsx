@@ -58,11 +58,9 @@ function Workspace() {
 // outside AppShell's chrome — Header above already carries progress/back/shortcuts, and
 // a second top bar would just eat screen space from the labeling surface.
 //
-// `project`/`task` come from the URL rather than being hardcoded. The session/queue/
-// trace API underneath is still the single-task surface from before this refactor (it
-// isn't scoped by project/task yet — that lands with a later backend packet), so these
-// aren't threaded into data fetching here; for now they identify the page for the tab
-// title, matching how AppShell's breadcrumb reads the same params on every other route.
+// `project`/`task` come from the URL and are threaded straight into NavProvider, which
+// scopes every session/queue/trace/annotations/progress call to
+// /api/projects/{project}/tasks/{task}/... (docs/refactor-plan.md §3).
 export default function LabelView() {
   const { project, task } = useParams<{ project: string; task: string }>();
 
@@ -71,7 +69,7 @@ export default function LabelView() {
   }, [project, task]);
 
   return (
-    <NavProvider>
+    <NavProvider project={project as string} task={task as string}>
       <Workspace />
     </NavProvider>
   );

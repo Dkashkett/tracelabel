@@ -113,12 +113,20 @@ function cloneDraft(draft: Draft): Draft {
   );
 }
 
-export function NavProvider({ children }: { children: ReactNode }) {
+export function NavProvider({
+  project,
+  task,
+  children,
+}: {
+  project: string;
+  task: string;
+  children: ReactNode;
+}) {
   const qc = useQueryClient();
-  const sessionQ = useSession();
-  const queueQ = useQueue();
-  const progressQ = useProgress();
-  const putMutation = usePutAnnotation();
+  const sessionQ = useSession(project, task);
+  const queueQ = useQueue(project, task);
+  const progressQ = useProgress(project, task);
+  const putMutation = usePutAnnotation(project, task);
 
   const [state, dispatch] = useReducer(navReducer, undefined, initialNavState);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -132,7 +140,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const session = sessionQ.data;
   const queue = queueQ.data;
   const currentTraceId = queue?.[state.traceIdx]?.trace_id;
-  const traceQ = useTrace(currentTraceId);
+  const traceQ = useTrace(project, task, currentTraceId);
   const trace = traceQ.data;
   const datasetComplete = !!queue && queueIsComplete(queue);
   const isFinished =
@@ -212,7 +220,10 @@ export function NavProvider({ children }: { children: ReactNode }) {
   }, [datasetComplete, state.workflow, session?.mode]);
 
   const fetchTrace = (id: string) =>
-    qc.fetchQuery({ queryKey: qk.trace(id), queryFn: () => api.getTrace(id) });
+    qc.fetchQuery({
+      queryKey: qk.trace(project, task, id),
+      queryFn: () => api.getTrace(project, task, id),
+    });
 
   const rememberCurrent = (
     draft: Draft = state.draft,
@@ -235,15 +246,19 @@ export function NavProvider({ children }: { children: ReactNode }) {
   };
 
   const invalidateAfterWrite = (traceId: string) => {
-    void qc.invalidateQueries({ queryKey: qk.trace(traceId) });
-    void qc.invalidateQueries({ queryKey: qk.queue });
-    void qc.invalidateQueries({ queryKey: qk.progress });
+    void qc.invalidateQueries({ queryKey: qk.trace(project, task, traceId) });
+    void qc.invalidateQueries({ queryKey: qk.queue(project, task) });
+    void qc.invalidateQueries({ queryKey: qk.progress(project, task) });
     const next = queue?.[state.traceIdx + 1]?.trace_id;
-    if (next) void qc.prefetchQuery({ queryKey: qk.trace(next), queryFn: () => api.getTrace(next) });
+    if (next)
+      void qc.prefetchQuery({
+        queryKey: qk.trace(project, task, next),
+        queryFn: () => api.getTrace(project, task, next),
+      });
   };
 
   const cacheAnnotation = (traceId: string, annotation: AnnotationOut) => {
-    qc.setQueryData<TraceDetail>(qk.trace(traceId), (current) =>
+    qc.setQueryData<TraceDetail>(qk.trace(project, task, traceId), (current) =>
       current
         ? {
             ...current,

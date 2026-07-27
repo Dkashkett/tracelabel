@@ -112,7 +112,7 @@ function renderProvider() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <NavProvider>
+      <NavProvider project="p" task="t">
         <Header />
         <Probe />
       </NavProvider>
@@ -135,14 +135,17 @@ beforeEach(() => {
 
   apiMock.getSession.mockImplementation(async () => session);
   apiMock.getQueue.mockImplementation(async () => queue.map((item) => ({ ...item })));
-  apiMock.getTrace.mockImplementation(async (id: string) => structuredClone(traces[id]));
+  apiMock.getTrace.mockImplementation(
+    async (_project: string, _task: string, id: string) => structuredClone(traces[id]),
+  );
   apiMock.getProgress.mockImplementation(async () => ({
     unit: "traces",
     total: queue.reduce((sum, item) => sum + item.n_targets, 0),
     labeled: queue.reduce((sum, item) => sum + item.n_labeled, 0),
     skipped: queue.reduce((sum, item) => sum + item.n_skipped, 0),
   }));
-  apiMock.putAnnotation.mockImplementation(async (input: AnnotationIn) => {
+  apiMock.putAnnotation.mockImplementation(
+    async (_project: string, _task: string, input: AnnotationIn) => {
     const out = annotation(input);
     const td = traces[input.target_id];
     const previous = td.annotations[input.target_id];
@@ -151,9 +154,10 @@ beforeEach(() => {
     if (previous?.status === "skipped") queueEntry.n_skipped--;
     if (input.status === "labeled") queueEntry.n_labeled++;
     if (input.status === "skipped") queueEntry.n_skipped++;
-    td.annotations[input.target_id] = out;
-    return out;
-  });
+      td.annotations[input.target_id] = out;
+      return out;
+    },
+  );
 });
 
 describe("NavProvider completion workflow", () => {
@@ -183,6 +187,8 @@ describe("NavProvider completion workflow", () => {
 
     await waitFor(() => expect(screen.getByTestId("finished").textContent).toBe("true"));
     expect(apiMock.putAnnotation).toHaveBeenCalledWith(
+      "p",
+      "t",
       expect.objectContaining({ target_id: "a", status: "labeled" }),
     );
   });
@@ -213,6 +219,8 @@ describe("NavProvider completion workflow", () => {
 
     await waitFor(() => expect(screen.getByTestId("finished").textContent).toBe("true"));
     expect(apiMock.putAnnotation).toHaveBeenCalledWith(
+      "p",
+      "t",
       expect.objectContaining({ target_id: "a", status: "skipped" }),
     );
   });
@@ -351,7 +359,7 @@ describe("NavProvider target history", () => {
     let pendingInput: AnnotationIn | undefined;
     let resolvePut: ((value: AnnotationOut) => void) | undefined;
     apiMock.putAnnotation.mockImplementation(
-      (input: AnnotationIn) =>
+      (_project: string, _task: string, input: AnnotationIn) =>
         new Promise<AnnotationOut>((resolve) => {
           pendingInput = input;
           resolvePut = resolve;
@@ -402,7 +410,7 @@ describe("NavProvider target history", () => {
     });
     queue = [entry("a", 0), entry("b", 1)];
     traces = { a: trace("a"), b: trace("b") };
-    apiMock.getTrace.mockImplementation(async (id: string) => {
+    apiMock.getTrace.mockImplementation(async (_project: string, _task: string, id: string) => {
       if (id === "b") return pendingB;
       return structuredClone(traces[id]);
     });
