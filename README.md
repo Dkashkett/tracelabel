@@ -15,17 +15,16 @@ uvx tracelabel demo
 Press `j` to jump to the first labelable turn, `1` to mark it **pass**, `Enter` to commit and
 advance. That's the whole loop.
 
-Multi-agent traces get real structure, not a flat message list: an outline navigator (`o`) for
-jumping between agents/tool calls/handoffs, collapsible tool-call cards with duration and error
-state, agent-colored sections, and handoff dividers — imported from OTEL GenAI spans, Google ADK
-sessions, or Datadog LLM-Observability spans (see [Data formats](#data-formats)).
+Multi-agent traces get real structure, not a flat message list: collapsible tool-call cards with
+duration and error state, agent-colored sections, and handoff dividers — imported from OTEL GenAI
+spans, Google ADK sessions, or Datadog LLM-Observability spans (see [Data formats](#data-formats)).
 
 ## Install
 
 ```bash
 pip install tracelabel          # from PyPI
 uvx tracelabel demo             # run without installing (via uv)
-python -m tracelabel serve …    # module entry point
+python -m tracelabel            # module entry point
 ```
 
 Requires **Python ≥ 3.10**; runs on macOS, Linux, and Windows. LLM-assisted prefill
@@ -39,14 +38,21 @@ pip install "tracelabel[ai]"
 
 ```bash
 pip install tracelabel
-tracelabel serve traces.jsonl     # imports the file + opens http://127.0.0.1:8377
-tracelabel export                 # → <task>-annotations.jsonl
+tracelabel                        # opens http://127.0.0.1:8377 on your project list
 ```
 
-Your traces are a UTF-8 JSONL file, one trace per line — see [Data formats](#data-formats). **No
-config needed**: tracelabel defaults to a turn-level pass/fail task, so you can point it at a
-file and start labeling. The file you serve *is* the queue — `tracelabel serve week-28.jsonl`
-labels only week 28's traces (see [One db, many files](#one-db-many-files)).
+Create a project in the browser, drop in a file, build a rubric, and start labeling — zero
+terminal commands after the first. If you'd rather skip the browser flow for a quick one-off:
+
+```bash
+tracelabel traces.jsonl            # imports the file + opens straight into the labeling view
+tracelabel export --project traces --task <name>   # → <task>-annotations.jsonl
+```
+
+Your traces are a UTF-8 JSONL file, one trace per line — see [Data formats](#data-formats).
+Pointing the launcher at a file finds-or-creates a project and a default trace-level pass/fail
+task for it, idempotently — running the same command again resumes where you left off instead
+of creating a second copy (see [Workspace: projects and tasks](#workspace-projects-and-tasks)).
 
 ## Data formats
 
@@ -121,7 +127,7 @@ input even if auto-detection would pick something else.
 **A folder of files** — a non-recursive scan; one document per file:
 
 ```bash
-tracelabel serve ./docs     # every .md / .markdown / .txt / .text / .html / .htm file
+tracelabel ./docs             # every .md / .markdown / .txt / .text / .html / .htm file
 ```
 
 The `id` is the filename, the extension sets `content_type`, and the real path is stored in
@@ -167,28 +173,19 @@ visible (never-labelable) event rows instead.
 
 | Command | What it does | When to reach for it |
 |---|---|---|
-| `serve [file\|dir]` | **Import + create/open a task + build the labeling queue + open the browser UI.** The interactive entry point. | Normal labeling. Point it at your data and go. |
-| `import <file\|dir>` | **Load data into the db only** — no task, no queue, no server. | Bulk ingest, or when you need format knobs `serve` doesn't expose. Follow with `serve --all`. |
-| `export` | Read the db and write annotations to JSONL/CSV. Pure read — no server needed. | Get labels out for analysis. |
-| `suggest [file]` | Optional LLM prefill of label suggestions (needs `[ai]` extra). | Warm-start labeling with a model's guesses. |
-| `demo` | Copy bundled sample traces to a temp dir and serve them. | Try tracelabel with zero setup. |
-| `tasks list` | Print a progress table across the whole db. | Check how far along each task is. |
+| `tracelabel [file\|dir]` | **The front door.** No argument: opens the browser on your project list. With a file/dir: finds-or-creates a project + a default task for it, imports, and opens straight into the labeling view. | Normal use. Everything else — creating projects, importing other sources, building a rubric — happens in the browser from here. |
+| `demo` | Launch against bundled sample traces, in a "demo" project. | Try tracelabel with zero setup. |
+| `import <file\|dir> --project NAME` | Load data into an existing project's db. No task, no browser. | Automation/CI, or importing into a project you already created in the browser. |
+| `suggest --project NAME --task NAME` | Optional LLM prefill of label suggestions (needs `[ai]` extra). | Warm-start labeling with a model's guesses. |
+| `export --project NAME --task NAME` | Read the db and write annotations to JSONL/CSV. Pure read — no server needed. | Get labels out for analysis. |
 
-**`import` vs `serve`** — both ingest through the same importer, but:
-
-- **`import`** loads data and exits. It exposes the full ingest surface: `--from
-  auto|ctf|otel|adk|datadog|documents`, `--on-conflict fail|skip`, `--skip-invalid` (skip malformed
-  lines instead of failing), `--as-documents`, `--include-all-spans` (keep non-chat/tool/agent
-  spans as visible event rows instead of folding them into metadata; OTEL and Datadog adapters
-  only). It does **not** create a task or start a server.
-- **`serve`** loads data *and* opens/creates a task, builds the labeling queue, and starts the
-  web UI. It fixes `on-conflict=fail` and doesn't expose `--from`/`--skip-invalid` — so when your
-  data isn't already in the native format, `import` it first, then `serve --all` to label everything in the db.
-
-Useful `serve` flags: `--task NAME`, `--level turn|trace`, `--all` (label the whole db, not just
-the file you served), `--include-all-spans`, `--review-of NAME` / `--labels-from KEY` (review an
-LLM judge's existing labels — see [Reviewing an LLM judge's labels](#reviewing-an-llm-judges-labels)),
-`--port` (default `8377`), `--no-browser`, `--shuffle/--no-shuffle`. The server binds `127.0.0.1` only.
+Every command takes `--dir PATH` to point at a workspace other than the default `~/.tracelabel/`
+(see [Workspace: projects and tasks](#workspace-projects-and-tasks)). `import`/`suggest`/`export`
+are the automation set — CI and scripts reach for these directly instead of driving the browser.
+`import` exposes the full ingest surface: `--from auto|ctf|otel|adk|datadog|documents`,
+`--on-conflict fail|skip`, `--skip-invalid`, `--as-documents`, `--include-all-spans` (keep
+non-chat/tool/agent spans as visible event rows instead of folding them into metadata; OTEL and
+Datadog adapters only). The server binds `127.0.0.1` only, always.
 
 ## Common workflows
 
@@ -201,37 +198,31 @@ tracelabel demo
 **2 · Label your own traces**
 
 ```bash
-tracelabel serve traces.jsonl     # label in the browser
-tracelabel export                 # → traces-annotations.jsonl (or <task>-annotations.jsonl)
+tracelabel traces.jsonl            # label in the browser
+tracelabel export --project traces --task <name>   # → <task>-annotations.jsonl
 ```
 
-**3 · Ingest a messy/odd format first, then label all of it**
+**3 · Ingest a messy/odd format, then label it in the browser**
 
 ```bash
-tracelabel import dump.jsonl --from adk --skip-invalid
-tracelabel serve --all            # queue = every trace in the db
+tracelabel                          # open the project list, create a project
+tracelabel import dump.jsonl --from adk --skip-invalid --project my-project
+# then open the project in the browser and build a rubric / start labeling
 ```
 
-**4 · Scoped weekly queues over one shared db**
-
-```bash
-tracelabel serve week-28.jsonl --task empathy   # only week 28; resumes where you left off
-```
-
-**5 · LLM-assisted prefill, then review**
+**4 · LLM-assisted prefill, then review**
 
 ```bash
 pip install "tracelabel[ai]"
-export OPENAI_API_KEY=…           # or your provider's key
-tracelabel suggest traces.jsonl   # writes suggestions; you still confirm each label
-tracelabel serve traces.jsonl
+export OPENAI_API_KEY=…            # or your provider's key
+tracelabel suggest --project my-project --task <name>   # writes suggestions
+tracelabel                          # review them in the browser; you still confirm each label
 ```
 
-**6 · Check progress and export for analysis**
+**5 · Export for analysis**
 
 ```bash
-tracelabel tasks list
-tracelabel export --joined --status labeled --out labels.jsonl
+tracelabel export --project my-project --task <name> --joined --status labeled --out labels.jsonl
 ```
 
 ## Exported data
@@ -293,7 +284,7 @@ service:
 ```
 
 ```bash
-tracelabel serve otel-spans.json        # or: tracelabel import … --from otel
+tracelabel otel-spans.json            # or: tracelabel import … --from otel --project NAME
 ```
 
 The adapter recognizes `gen_ai.operation.name` in `chat`/`generate_content`/`text_completion`
@@ -320,7 +311,7 @@ with open("adk-sessions.jsonl", "w") as f:
 Then:
 
 ```bash
-tracelabel serve adk-sessions.jsonl        # or: tracelabel import … --from adk
+tracelabel adk-sessions.jsonl        # or: tracelabel import … --from adk --project NAME
 ```
 
 The adapter needs, per session: `events[].author`, and `events[].content.parts[]` where a part is
@@ -352,86 +343,48 @@ with a `kind` (`llm` / `tool` / `workflow`); LLM spans carry `meta.input.message
 > jq path if your export nests fields differently — the requirement is only that each output line
 > is a span object with the fields above.
 
-## Configuring the task
+## Building a rubric
 
-Drop a `config.yaml` next to your data (or pass `--config`). Everything not specified falls back
-to sensible defaults; unknown keys are hard errors with a pointed message.
-
-```yaml
-name: empathy
-level: turn                 # label per-turn (default) or per-trace
-label_roles: [assistant]    # which roles are labelable
-fields:
-  - name: verdict
-    type: single_select
-    options: [pass, fail]
-    required: true
-  - name: failure_modes
-    type: multi_select
-    options: [hallucination, refused, wrong_tool, formatting]
-  - name: notes
-    type: text
-```
-
-Field types map one-to-one to UI controls and to export columns. Add a field, get a new keyboard
-target and a new column — no redesign. With a `config.yaml` present you can run `tracelabel serve`
-(no file argument) and it uses the `data:` path from the config.
+A task's fields (`single_select`, `multi_select`, `text` — the three types the UI and export both
+understand) are built and edited in the browser's rubric editor, with a live preview of exactly
+how each field will render while you're labeling. Pick a starting preset or start blank, add/remove
+fields, and save. Removing a field, retyping one, or dropping an option that's actually in use is
+flagged before it's applied — you can fork to a new task instead of orphaning existing labels.
+Cosmetic edits (relabeling, reordering, adding an optional field) never touch existing annotations.
 
 ## Reviewing an LLM judge's labels
 
-When a model has already judged your traces — a `pass`/`fail` verdict plus reasoning per trace —
-review mode lets a human sweep those predictions and **approve or correct** each one, keyboard-fast.
-It's `serve` inverted: instead of stepping through *unlabeled* targets, it steps through the
-targets the judge already labeled, seeding the form from the judge's verdict so `Enter` **approves**
-it as-is, `1`/`2` **flip** the verdict, and `r` edits the reasoning.
+A task can be put into review mode — stepping through targets an LLM judge already labeled instead
+of unlabeled ones, seeding the form from the judge's verdict so you approve or correct it — by
+setting `review_of` (the judge's annotator name) and `review_labels_from` on the task (`PATCH
+/api/projects/{project}/tasks/{task}`, see `src/tracelabel/api/models.py`'s `TaskPatch`). The judge
+is stored as its own annotator, and your corrections as a second one, so the original prediction is
+preserved and `tracelabel export --joined` emits one row per annotator per trace — diff them to
+measure how often the judge was right. A dedicated review-mode screen (rather than editing the task
+via the API directly) is planned but not yet built.
 
-Put each judge label on its trace line under a `judge` key (a values dict keyed by your schema
-fields), and give every labeled line an `id` so the label can be matched to its trace:
+## Workspace: projects and tasks
 
-```jsonl
-{"id": "t1", "messages": [...], "judge": {"verdict": "pass", "reasoning": "answered correctly"}}
-{"id": "t2", "messages": [...], "judge": {"verdict": "pass", "reasoning": "looks fine"}}
+Everything tracelabel manages lives under one workspace directory — `~/.tracelabel/` by default,
+or `--dir PATH` to root it elsewhere:
+
+```
+~/.tracelabel/
+  settings.json               # annotator, default LLM model, theme
+  projects/
+    support-triage/
+      project.json             # name, created_at, notes
+      tracelabel.db             # this project's traces, tasks, and annotations
+    week-28-eval/
+      ...
 ```
 
-```bash
-tracelabel serve traces.jsonl --review-of gpt-4o   # opens on the first judge label to review
-tracelabel export --joined                          # judge + your labels, one row each
-```
-
-The judge is stored as its **own annotator** (here `gpt-4o`), and your corrections as a second
-annotator — so the original prediction is **preserved**, and export emits one row per annotator per
-trace. Diff them to measure how often the judge was right:
-
-```python
-import pandas as pd
-df = pd.read_json("traces-2026-07-12-annotations.jsonl", lines=True)
-v = df.assign(verdict=df["values"].str["verdict"]).pivot(
-    index="trace_id", columns="annotator", values="verdict")
-agree = (v["gpt-4o"] == v["me"]).mean()   # judge accuracy vs. your review
-```
-
-Review mode is **trace-level** (the `pass_fail` default) and single judge per run. Flags:
-`--review-of NAME` (the judge's annotator name; turns review mode on), `--labels-from KEY`
-(the source-line key; default `judge`), and `--annotator NAME` for your own name (must differ from
-the judge). You can also set these under a `review:` block in `config.yaml`
-(`review: {of: gpt-4o, labels_from: judge}`).
-
-## One db, many files
-
-tracelabel stores one shared pool of traces per project (`.tracelabel/tracelabel.db`) — traces
-are deduped by id/content hash and accumulate across every file you've ever served or imported.
-But the *file you serve is a lens over that pool*, not the pool itself: `tracelabel serve
-week-28.jsonl --task empathy` scopes the labeling queue and progress bar to exactly the traces in
-`week-28.jsonl`, even if the db already contains traces from `week-27.jsonl` or other tasks.
-Re-serving an old file resumes exactly where you left off — nothing is re-scrambled or
-un-completed by importing something new.
-
-- Each file is imported idempotently, so re-serving the same file (or one with overlapping
-  traces) is always safe.
-- `tracelabel export` and `tracelabel tasks list` are **db-wide** — they report on the whole pool,
-  across every file and session, not just the last one served.
-- `tracelabel serve <file> --all` opts back into whole-db behavior: it still imports `<file>`
-  (idempotent, as always), but the queue is every trace in the db, not just that file's.
+One workspace holds any number of **projects**; one project holds any number of **tasks** (each a
+named labeling pass over a level with its own field schema) and **sources** (a durable record of
+each import — filename, adapter, trace count — so "label the batch I imported Tuesday" survives a
+restart). Traces are deduped by id/content hash within a project and accumulate across every
+source you've imported into it. `--dir .` roots a workspace at the current directory instead,
+for a "labels live next to my traces in git" workflow.
 
 ## Privacy & security
 
