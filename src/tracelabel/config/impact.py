@@ -6,8 +6,9 @@ route that will call it (``api/routes/tasks.py``, owned by W2-TASKS) can be writ
 type-checked against a frozen interface before the real analysis logic lands.
 """
 
+import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from tracelabel.db.annotations import AnnotationRepository
 
@@ -37,6 +38,11 @@ class SchemaImpact:
     breaking: bool
 
 
+def _decode_values(raw: str) -> dict[str, Any]:
+    """Decode a stored annotation's ``values`` JSON column back into a plain dict."""
+    return cast(dict[str, Any], json.loads(raw))
+
+
 class SchemaImpactAnalyzer:
     """Compare an old and new field list for a task and report the impact of the edit.
 
@@ -53,4 +59,86 @@ class SchemaImpactAnalyzer:
         old_fields: list[dict[str, Any]],
         new_fields: list[dict[str, Any]],
     ) -> SchemaImpact:
-        raise NotImplementedError("implemented by W1-IMPACT")
+        old_by_name = {field["name"]: field for field in old_fields}
+        new_by_name = {field["name"]: field for field in new_fields}
+
+        removed_fields = sorted(name for name in old_by_name if name not in new_by_name)
+        retyped_fields = sorted(
+            (
+                RetypedField(
+                    name=name,
+                    old_type=old_by_name[name]["type"],
+                    new_type=new_by_name[name]["type"],
+                )
+                for name in old_by_name
+                if name in new_by_name and old_by_name[name]["type"] != new_by_name[name]["type"]
+            ),
+            key=lambda retyped: retyped.name,
+        )
+        retyped_names = {retyped.name for retyped in retyped_fields}
+
+        # Options dropped from a field that survives the edit unchanged in type.
+        # Whether any of them actually matter is decided below, against stored values.
+        candidate_removed_options = self._candidate_removed_options(
+            old_by_name, new_by_name, retyped_names
+        )
+
+        removed_options: dict[str, set[str]] = {}
+        affected: set[tuple[str, str, str]] = set()
+        for row in self._annotations.list_for_export(task, "all"):
+            values = _decode_values(row["values"])
+            annotation_key = (row["target_type"], row["target_id"], row["annotator"])
+
+            for name in removed_fields:
+                if values.get(name) is not None:
+                    affected.add(annotation_key)
+
+            for name in retyped_names:
+                if values.get(name) is not None:
+                    affected.add(annotation_key)
+
+            for name, candidates in candidate_removed_options.items():
+                used = self._used_options(values.get(name), candidates)
+                if used:
+                    removed_options.setdefault(name, set()).update(used)
+                    affected.add(annotation_key)
+
+        return SchemaImpact(
+            removed_fields=removed_fields,
+            retyped_fields=retyped_fields,
+            removed_options={name: sorted(options) for name, options in removed_options.items()},
+            affected_annotations=len(affected),
+            breaking=bool(affected),
+        )
+
+    @staticmethod
+    def _candidate_removed_options(
+        old_by_name: dict[str, dict[str, Any]],
+        new_by_name: dict[str, dict[str, Any]],
+        retyped_names: set[str],
+    ) -> dict[str, set[str]]:
+        """Options present on a field's old schema but not its new one, for fields that
+        exist in both and kept the same type. Excludes retyped/removed fields — those are
+        already fully accounted for by ``removed_fields``/``retyped_fields``.
+        """
+        candidates: dict[str, set[str]] = {}
+        for name, old_field in old_by_name.items():
+            if name in retyped_names or name not in new_by_name:
+                continue
+            if old_field.get("type") not in ("single_select", "multi_select"):
+                continue
+            new_field = new_by_name[name]
+            removed = set(old_field.get("options") or []) - set(new_field.get("options") or [])
+            if removed:
+                candidates[name] = removed
+        return candidates
+
+    @staticmethod
+    def _used_options(value: Any, candidates: set[str]) -> set[str]:
+        """Which of ``candidates`` a single stored field value actually uses — a scalar
+        for ``single_select``, a list for ``multi_select``."""
+        if value is None:
+            return set()
+        if isinstance(value, list):
+            return {option for option in value if option in candidates}
+        return {value} if value in candidates else set()
