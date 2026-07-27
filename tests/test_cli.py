@@ -7,26 +7,13 @@ from typer.testing import CliRunner
 
 import tracelabel.cli.app as cli
 import tracelabel.cli.commands as commands
-from tracelabel.config.loader import raw_config_for_target
-from tracelabel.config.models import CliArgs
-from tracelabel.config.resolver import ConfigResolver
-from tracelabel.ctf.validation import CtfValidator
+from helpers import make_task_spec
+from tracelabel.config.models import LLMConfig
 from tracelabel.db.database import Database, default_db_path
 from tracelabel.errors import EnvError
-from tracelabel.imports.adapters.base import AdapterRegistry
-from tracelabel.imports.service import ImportService
+from tracelabel.workspace.workspace import Workspace, default_workspace_root
 
 runner = CliRunner()
-
-
-def resolve(raw, args):
-    return ConfigResolver().resolve(raw, args)
-
-
-def import_file(database, path):
-    service = ImportService(AdapterRegistry.default(), CtfValidator(), database.traces)
-    return service.import_file(path)
-
 
 TRACE = {
     "id": "t_one",
@@ -45,9 +32,9 @@ def _write_data(dir_: Path, *traces) -> Path:
 
 @pytest.fixture(autouse=True)
 def _no_serve(monkeypatch):
-    # Stop before the blocking event loop / browser for every serve-path test. The real lock is
-    # released via atexit when the process ends; in-process that never fires, so stub it out
-    # (lock semantics are covered by P3's test_db) to keep repeated serves from self-colliding.
+    # Stop before the blocking event loop / browser for every launcher-path test. The
+    # real workspace lock is released via atexit when the process ends; in-process that
+    # never fires, so stub it out to keep repeated launches from self-colliding.
     calls = {}
 
     def fake_uvicorn(app, host, port):
@@ -58,6 +45,15 @@ def _no_serve(monkeypatch):
     monkeypatch.setattr(commands.webbrowser, "open", lambda url: calls.setdefault("browser", url))
     monkeypatch.setattr(commands, "port_is_available", lambda _host, _port: True)
     return calls
+
+
+@pytest.fixture(autouse=True)
+def _workspace_home(tmp_path, monkeypatch):
+    # Keep every test off the real ~/.tracelabel — the CLI's own --dir/no-dir
+    # resolution (default_workspace_root) is what's under test here, not a Workspace
+    # constructed directly.
+    monkeypatch.setenv("TRACELABEL_HOME", str(tmp_path))
+    return tmp_path
 
 
 def _run_cli(monkeypatch, args) -> int:
@@ -78,7 +74,7 @@ def test_exit_code_user_error(tmp_path, monkeypatch):
     # Unsupported target extension → UserError → exit 1.
     bad = tmp_path / "data.txt"
     bad.write_text("nope")
-    assert _run_cli(monkeypatch, ["serve", str(bad), "--no-browser", "--yes"]) == 1
+    assert _run_cli(monkeypatch, [str(bad), "--no-browser"]) == 1
 
 
 def test_exit_code_env_error(tmp_path, monkeypatch):
@@ -88,7 +84,7 @@ def test_exit_code_env_error(tmp_path, monkeypatch):
         "pick_port",
         lambda _self, requested=8377: (_ for _ in ()).throw(EnvError("no ports")),
     )
-    assert _run_cli(monkeypatch, ["serve", str(data), "--no-browser", "--yes"]) == 2
+    assert _run_cli(monkeypatch, [str(data), "--no-browser"]) == 2
 
 
 # ── CLI-02: port fallback + exhaustion ────────────────────────────────────────
@@ -103,48 +99,48 @@ def test_pick_port_fallback_and_exhaustion():
         commands.pick_port(9000, probe=lambda _host, _port: False)
 
 
-# ── CLI-03: import summary line ───────────────────────────────────────────────
+# ── CLI-03: import summary line (adapted to --project) ───────────────────────
 
 
 def test_import_summary_output(tmp_path):
     second = {"id": "t_two", "messages": [{"role": "user", "content": "x"}]}
     data = _write_data(tmp_path, TRACE, second)
-    r = runner.invoke(cli.app, ["import", str(data)])
+
+    workspace = Workspace(default_workspace_root())
+    workspace.create_project("My Project")
+
+    r = runner.invoke(cli.app, ["import", str(data), "--project", "my-project"])
     assert r.exit_code == 0
     assert "imported traces.jsonl: 2 inserted, 0 skipped (duplicate), 0 conflicts" in r.stdout
+
     # Idempotent re-import → both counted as duplicates.
-    r2 = runner.invoke(cli.app, ["import", str(data)])
+    r2 = runner.invoke(cli.app, ["import", str(data), "--project", "my-project"])
     assert "2 skipped (duplicate)" in r2.stdout
+
+
+def test_import_unknown_project_is_a_user_error(tmp_path):
+    data = _write_data(tmp_path)
+    r = runner.invoke(cli.app, ["import", str(data), "--project", "nope"])
+    assert r.exit_code != 0
 
 
 # ── CLI-15: --from otel / --include-all-spans ─────────────────────────────────
 
 
-def test_import_from_otel_forced(tmp_path):
-    envelope = {
+def _otel_envelope(trace_id: str, span_id: str, attributes: list[dict]) -> dict:
+    return {
         "resourceSpans": [
             {
                 "scopeSpans": [
                     {
                         "spans": [
                             {
-                                "traceId": "3" * 32,
-                                "spanId": "4" * 16,
+                                "traceId": trace_id,
+                                "spanId": span_id,
                                 "parentSpanId": "",
                                 "name": "chat",
                                 "startTimeUnixNano": "1700000000000000000",
-                                "attributes": [
-                                    {
-                                        "key": "gen_ai.operation.name",
-                                        "value": {"stringValue": "chat"},
-                                    },
-                                    {
-                                        "key": "gen_ai.input.messages",
-                                        "value": {
-                                            "stringValue": '[{"role":"user","content":"hi"}]'
-                                        },
-                                    },
-                                ],
+                                "attributes": attributes,
                             }
                         ]
                     }
@@ -152,318 +148,198 @@ def test_import_from_otel_forced(tmp_path):
             }
         ]
     }
+
+
+def test_import_from_otel_forced(tmp_path):
+    envelope = _otel_envelope(
+        "3" * 32,
+        "4" * 16,
+        [
+            {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+            {
+                "key": "gen_ai.input.messages",
+                "value": {"stringValue": '[{"role":"user","content":"hi"}]'},
+            },
+        ],
+    )
     data = tmp_path / "otel.json"
     data.write_text(json.dumps(envelope), encoding="utf-8")
 
-    r = runner.invoke(cli.app, ["import", str(data), "--from", "otel"])
+    workspace = Workspace(default_workspace_root())
+    workspace.create_project("Otel")
+
+    r = runner.invoke(cli.app, ["import", str(data), "--project", "otel", "--from", "otel"])
     assert r.exit_code == 0
     assert "imported otel.json: 1 inserted" in r.stdout
 
 
-def test_import_include_all_spans_flag(tmp_path):
-    envelope = {
-        "resourceSpans": [
-            {
-                "scopeSpans": [
-                    {
-                        "spans": [
-                            {
-                                "traceId": "5" * 32,
-                                "spanId": "6" * 16,
-                                "parentSpanId": "",
-                                "name": "internal_only",
-                                "startTimeUnixNano": "1700000000000000000",
-                                "attributes": [{"key": "foo", "value": {"stringValue": "bar"}}],
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
-    data = tmp_path / "otel.json"
-    data.write_text(json.dumps(envelope), encoding="utf-8")
-    db_path = default_db_path(tmp_path)
+# ── stdout/stderr separation on export (adapted to --project/--task) ─────────
+
+
+def test_stderr_stdout_separation(tmp_path):
+    workspace = Workspace(default_workspace_root())
+    project = workspace.create_project("Export Test")
+    with workspace.open_database(project.slug) as database:
+        database.tasks.create(make_task_spec(name="t"))
+        database.traces.import_trace(TRACE, "ctf", "fail")
+        database.annotations.upsert_annotation(
+            task="t",
+            target_type="trace",
+            target_id="t_one",
+            status="labeled",
+            values={"verdict": "pass"},
+            annotator="me",
+            schema_hash=database.tasks.get("t")["schema_hash"],
+            prefill_model=None,
+        )
 
     r = runner.invoke(
         cli.app,
-        ["import", str(data), "--from", "otel", "--include-all-spans", "--db", str(db_path)],
+        ["export", "--project", project.slug, "--task", "t", "--out", "-"],
     )
     assert r.exit_code == 0
-    conn = Database(db_path)
-    turns = conn.traces.get_turns("5" * 32)
-    conn.close()
-    # without --include-all-spans this span would be dropped into trace raw entirely
-    assert [t["role"] for t in turns] == ["event"]
-    assert turns[0]["kind"] == "span"
+    # Data (the annotation row) lands on stdout…
+    assert "t_one" in r.stdout
+    # …while the "wrote N rows" message goes to stderr.
+    assert "wrote" in r.stderr
+    assert "wrote" not in r.stdout
 
 
-# ── CLI-04: tasks list table ──────────────────────────────────────────────────
+def test_export_requires_project_when_multiple_exist(tmp_path):
+    workspace = Workspace(default_workspace_root())
+    workspace.create_project("Alpha")
+    workspace.create_project("Beta")
+    r = runner.invoke(cli.app, ["export", "--task", "t"])
+    assert r.exit_code != 0
 
 
-def test_tasks_list_output(tmp_path):
-    data = _write_data(tmp_path)
-    db_path = default_db_path(tmp_path)
-    conn = Database(db_path)
-    import_file(conn, data)
-    cfg = resolve(raw_config_for_target(data), CliArgs(task="mytask"))
-    conn.tasks.open(cfg, assume_yes=True)
-    conn.close()
+def test_export_auto_detects_the_only_project(tmp_path):
+    workspace = Workspace(default_workspace_root())
+    project = workspace.create_project("Solo")
+    with workspace.open_database(project.slug) as database:
+        database.tasks.create(make_task_spec(name="t"))
 
-    r = runner.invoke(cli.app, ["tasks", "list", "--db", str(db_path)])
+    r = runner.invoke(cli.app, ["export", "--task", "t", "--out", "-"])
     assert r.exit_code == 0
-    assert "TASK" in r.stdout and "PROGRESS" in r.stdout
-    assert "mytask" in r.stdout
-    assert "traces" in r.stdout  # trace-level → native unit
 
 
-# ── CLI-05: --yes bypasses drift confirm ──────────────────────────────────────
+# ── CLI-09: directory targets (documents) ─────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_yes_bypasses_confirm(tmp_path, monkeypatch):
-    data = _write_data(tmp_path)
-    # First serve creates the task (default schema).
-    r1 = runner.invoke(cli.app, ["serve", str(data), "--task", "t", "--no-browser", "--yes"])
-    assert r1.exit_code == 0
-    # Second serve with a different schema (custom field via yaml) triggers drift; --yes proceeds.
-    cfg_yaml = tmp_path / "config.yaml"
-    cfg_yaml.write_text(
-        "data: traces.jsonl\n"
-        "task: t\n"
-        "fields:\n"
-        "  - name: rating\n"
-        "    type: single_select\n"
-        "    options: [good, bad]\n",
-        encoding="utf-8",
-    )
-    r2 = runner.invoke(cli.app, ["serve", str(cfg_yaml), "--no-browser", "--yes"])
-    assert r2.exit_code == 0
+def test_import_directory_of_documents(tmp_path):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "a.md").write_text("# Title\n", encoding="utf-8")
+    (docs_dir / "b.txt").write_text("plain\n", encoding="utf-8")
 
+    workspace = Workspace(default_workspace_root())
+    workspace.create_project("Docs")
 
-# ── CLI-06: TARGET routing ────────────────────────────────────────────────────
-
-
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_target_routing(tmp_path):
-    data = _write_data(tmp_path)
-    # data file → implicit empty config (default task name derived from file stem).
-    r1 = runner.invoke(cli.app, ["serve", str(data), "--no-browser", "--yes"])
-    assert r1.exit_code == 0
-    assert "traces-" in r1.stdout  # default_task_name uses the stem
-
-    # yaml file → config loaded, custom task name honored.
-    cfg_yaml = tmp_path / "config.yaml"
-    cfg_yaml.write_text("data: traces.jsonl\ntask: named\n", encoding="utf-8")
-    r2 = runner.invoke(cli.app, ["serve", str(cfg_yaml), "--no-browser", "--yes"])
-    assert r2.exit_code == 0
-    assert "task 'named'" in r2.stdout
-
-
-# ── CLI-06b: serve scopes the queue to the served file, not the whole db ─────
-
-
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_serve_scopes_queue_to_the_served_file(tmp_path):
-    from fastapi.testclient import TestClient
-
-    def _traces(*ids):
-        return [
-            {
-                "id": tid,
-                "messages": [
-                    {"role": "user", "content": "hi"},
-                    {"role": "assistant", "content": "hey"},
-                ],
-            }
-            for tid in ids
-        ]
-
-    a = tmp_path / "a.jsonl"
-    a.write_text(
-        "\n".join(json.dumps(t) for t in _traces("a1", "a2", "a3")) + "\n", encoding="utf-8"
-    )
-    b = tmp_path / "b.jsonl"
-    b.write_text("\n".join(json.dumps(t) for t in _traces("b1", "b2")) + "\n", encoding="utf-8")
-
-    captured: dict = {}
-
-    class CapturingRunner(commands.ServerRunner):
-        def run(self, app, port, *, no_browser):
-            # query while the db is still open (the `with database` block in
-            # ServeCommand.execute closes it right after this call returns)
-            with TestClient(app) as client:
-                captured["queue"] = [row["trace_id"] for row in client.get("/api/queue").json()]
-
-    cmd = commands.ServeCommand(server_runner=CapturingRunner())
-
-    cfg_a = resolve(raw_config_for_target(a), CliArgs(task="empathy"))
-    cmd.execute(cfg_a, tmp_path, None, 8377, True, True)
-    assert sorted(captured["queue"]) == ["a1", "a2", "a3"]
-
-    # serving b afterward scopes to just b's ids, even though a's traces are still in the db
-    cfg_b = resolve(raw_config_for_target(b), CliArgs(task="empathy"))
-    cmd.execute(cfg_b, tmp_path, None, 8377, True, True)
-    assert sorted(captured["queue"]) == ["b1", "b2"]
-
-    db_path = default_db_path(tmp_path)
-    conn = Database(db_path)
-    assert conn.connection.execute("SELECT count(*) FROM traces").fetchone()[0] == 5
-    conn.close()
-
-
-# ── CLI-06c: `serve --all` opts back into the whole-db queue ─────────────────
-
-
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_serve_all_flag_scopes_to_whole_db(tmp_path):
-    from fastapi.testclient import TestClient
-
-    def _traces(*ids):
-        return [
-            {
-                "id": tid,
-                "messages": [
-                    {"role": "user", "content": "hi"},
-                    {"role": "assistant", "content": "hey"},
-                ],
-            }
-            for tid in ids
-        ]
-
-    a = tmp_path / "a.jsonl"
-    a.write_text(
-        "\n".join(json.dumps(t) for t in _traces("a1", "a2", "a3")) + "\n", encoding="utf-8"
-    )
-    b = tmp_path / "b.jsonl"
-    b.write_text("\n".join(json.dumps(t) for t in _traces("b1", "b2")) + "\n", encoding="utf-8")
-
-    captured: dict = {}
-
-    class CapturingRunner(commands.ServerRunner):
-        def run(self, app, port, *, no_browser):
-            with TestClient(app) as client:
-                captured["queue"] = [row["trace_id"] for row in client.get("/api/queue").json()]
-
-    cmd = commands.ServeCommand(server_runner=CapturingRunner())
-
-    cfg_a = resolve(raw_config_for_target(a), CliArgs(task="empathy"))
-    cmd.execute(cfg_a, tmp_path, None, 8377, True, True)
-    assert sorted(captured["queue"]) == ["a1", "a2", "a3"]
-
-    # `--all` still imports b.jsonl, but the queue is the whole db pool, not just b's ids
-    cfg_b = resolve(raw_config_for_target(b), CliArgs(task="empathy"))
-    cmd.execute(cfg_b, tmp_path, None, 8377, True, True, serve_all=True)
-    assert sorted(captured["queue"]) == ["a1", "a2", "a3", "b1", "b2"]
-
-
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_serve_all_cli_flag_end_to_end(tmp_path):
-    data = _write_data(tmp_path)
-    r = runner.invoke(cli.app, ["serve", str(data), "--no-browser", "--yes", "--all"])
+    r = runner.invoke(cli.app, ["import", str(docs_dir), "--project", "docs"])
     assert r.exit_code == 0
-    assert "whole db" in r.stdout
+    assert "2 inserted" in r.stdout
 
 
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_suggest_imports_target_file_and_scopes_to_it(tmp_path, monkeypatch):
+def test_single_document_file_rejected_by_cli(tmp_path, monkeypatch):
+    md = tmp_path / "notes.md"
+    md.write_text("# hi", encoding="utf-8")
+    code = _run_cli(monkeypatch, [str(md), "--no-browser"])
+    assert code == 1
+
+
+# ── launcher: no TARGET → serves the whole workspace, opens "/" ─────────────
+
+
+def test_launcher_with_no_target_serves_project_list(_no_serve):
+    r = runner.invoke(cli.launcher_app, ["--no-browser"])
+    assert r.exit_code == 0, r.stdout
+    # No project or task should have been created.
+    workspace = Workspace(default_workspace_root())
+    assert workspace.list_projects() == []
+
+
+def test_launcher_opens_browser_to_root_with_no_target(_no_serve):
+    r = runner.invoke(cli.launcher_app, [])
+    assert r.exit_code == 0, r.stdout
+    assert _no_serve["browser"] == f"http://127.0.0.1:{_no_serve['port']}/"
+
+
+# ── launcher: a TARGET → finds/creates a project+task, opens the label view ──
+
+
+def test_launcher_with_target_creates_project_and_task(tmp_path, _no_serve):
+    data = _write_data(tmp_path)
+    r = runner.invoke(cli.launcher_app, [str(data)])
+    assert r.exit_code == 0, r.stdout
+
+    workspace = Workspace(default_workspace_root())
+    projects = workspace.list_projects()
+    assert len(projects) == 1
+    assert projects[0].slug == "traces"
+
+    assert "/p/traces/t/" in _no_serve["browser"]
+    assert _no_serve["browser"].endswith("/label")
+
+
+def test_launcher_with_target_twice_is_idempotent(tmp_path, _no_serve):
+    data = _write_data(tmp_path)
+    runner.invoke(cli.launcher_app, [str(data)])
+    runner.invoke(cli.launcher_app, [str(data)])
+
+    workspace = Workspace(default_workspace_root())
+    assert len(workspace.list_projects()) == 1
+    project = workspace.list_projects()[0]
+    with workspace.open_database(project.slug) as database:
+        assert len(database.tasks.list_summaries()) == 1
+        assert database.connection.execute("SELECT count(*) FROM traces").fetchone()[0] == 1
+
+
+# ── demo ───────────────────────────────────────────────────────────────────
+
+
+def test_demo_launches_and_creates_demo_project(_no_serve):
+    r = runner.invoke(cli.app, ["demo", "--no-browser"])
+    assert r.exit_code == 0, r.stdout
+    workspace = Workspace(default_workspace_root())
+    slugs = [p.slug for p in workspace.list_projects()]
+    assert "demo" in slugs
+
+
+def test_demo_run_twice_reuses_the_same_project(_no_serve):
+    runner.invoke(cli.app, ["demo", "--no-browser"])
+    runner.invoke(cli.app, ["demo", "--no-browser"])
+    workspace = Workspace(default_workspace_root())
+    demo_projects = [p for p in workspace.list_projects() if p.slug == "demo"]
+    assert len(demo_projects) == 1
+
+
+# ── suggest ──────────────────────────────────────────────────────────────────
+
+
+def test_suggest_over_a_project_and_task(monkeypatch):
     from types import SimpleNamespace
 
-    from tracelabel.config.models import LLMConfig, ResolvedTaskConfig
-
-    def _trace(tid):
-        return {
-            "id": tid,
-            "messages": [
-                {"role": "user", "content": "hi"},
-                {"role": "assistant", "content": "hey"},
+    workspace = Workspace(default_workspace_root())
+    project = workspace.create_project("Suggest Test")
+    with workspace.open_database(project.slug) as database:
+        database.traces.import_trace(TRACE, "ctf", "fail")
+        # SuggestionService validates the model's response via AnnotationValidator,
+        # which requires every field dict to have a "required" key — make_task_spec's
+        # default field omits it (fine for tests that never validate), so spell out a
+        # complete field here.
+        spec = make_task_spec(
+            name="t",
+            fields=[
+                {
+                    "name": "verdict",
+                    "type": "single_select",
+                    "options": ["pass", "fail"],
+                    "required": True,
+                }
             ],
-        }
-
-    a = tmp_path / "a.jsonl"
-    a.write_text(json.dumps(_trace("a1")) + "\n", encoding="utf-8")
-    b = tmp_path / "b.jsonl"
-    b.write_text(json.dumps(_trace("b1")) + "\n", encoding="utf-8")
-
-    cfg = ResolvedTaskConfig(
-        name="task",
-        level="turn",
-        fields=[
-            {
-                "name": "verdict",
-                "type": "single_select",
-                "options": ["pass", "fail"],
-                "required": True,
-            }
-        ],
-        label_roles=["assistant"],
-        shuffle=False,
-        annotator="alice",
-        schema_hash="h1",
-        data_path=b,
-        llm=LLMConfig(model="gpt-4o-mini"),
-        suggest_instructions=None,
-    )
-
-    db_path = default_db_path(tmp_path)
-    conn = Database(db_path)
-    import_file(conn, a)  # a1 already in the pool from an earlier session
-    conn.tasks.open(cfg, assume_yes=True)
-    conn.close()
+        )
+        spec = spec.__class__(**{**spec.__dict__, "llm": LLMConfig(model="gpt-4o-mini")})
+        database.tasks.create(spec)
 
     calls: list[dict] = []
 
@@ -477,116 +353,21 @@ def test_suggest_imports_target_file_and_scopes_to_it(tmp_path, monkeypatch):
 
     monkeypatch.setitem(sys.modules, "litellm", FakeLiteLLM())
 
-    summary = commands.SuggestCommand().execute(
-        cfg, tmp_path, None, limit=None, overwrite=False, concurrency=1
-    )
-
-    # suggest imports its own target file (b1), on top of a1 already in the pool.
-    conn = Database(db_path)
-    assert conn.connection.execute("SELECT count(*) FROM traces").fetchone()[0] == 2
-    conn.close()
-
-    # ...but only suggests over b1's targets, not a1's (a1 predates this suggest session).
-    assert summary.ok == 1
+    r = runner.invoke(cli.app, ["suggest", "--project", project.slug, "--task", "t"])
+    assert r.exit_code == 0, r.stdout
+    assert "suggested" in r.stdout
     assert len(calls) == 1
 
 
-# ── CLI-07: errors → stderr, data → stdout ────────────────────────────────────
+# ── default_db_path / Database still work underneath (sanity) ───────────────
 
 
-def test_stderr_stdout_separation(tmp_path):
-    data = _write_data(tmp_path)
-    db_path = default_db_path(tmp_path)
-    conn = Database(db_path)
-    import_file(conn, data)
-    cfg = resolve(raw_config_for_target(data), CliArgs(task="t"))
-    conn.tasks.open(cfg, assume_yes=True)
-    conn.annotations.upsert_annotation(
-        task="t",
-        target_type="trace",
-        target_id="t_one",
-        status="labeled",
-        values={"verdict": "pass"},
-        annotator="me",
-        schema_hash=cfg.schema_hash,
-        prefill_model=None,
-    )
-    conn.close()
-
-    r = runner.invoke(cli.app, ["export", "--task", "t", "--db", str(db_path), "--out", "-"])
-    assert r.exit_code == 0
-    # Data (the annotation row) lands on stdout…
-    assert "t_one" in r.stdout
-    # …while the "wrote N rows" message goes to stderr.
-    assert "wrote" in r.stderr
-    assert "wrote" not in r.stdout
+def test_default_db_path_still_importable():
+    # Not used by the workspace-based CLI paths anymore, but still a public helper
+    # other code may reference.
+    assert default_db_path(Path("/tmp/x")) == Path("/tmp/x/.tracelabel/tracelabel.db")
 
 
-# ── CLI-08: no --host flag; binds 127.0.0.1 ───────────────────────────────────
-
-
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_no_host_flag_and_loopback_bind(tmp_path, _no_serve):
-    help_txt = runner.invoke(cli.app, ["serve", "--help"]).stdout
-    assert "--host" not in help_txt
-
-    data = _write_data(tmp_path)
-    r = runner.invoke(cli.app, ["serve", str(data), "--no-browser", "--yes"])
-    assert r.exit_code == 0
-    assert _no_serve["host"] == "127.0.0.1"
-    assert "browser" not in _no_serve  # --no-browser suppressed the open
-
-
-# ── CLI-09: directory targets (documents) ─────────────────────────────────────
-
-
-def test_import_directory_of_documents(tmp_path):
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
-    (docs_dir / "a.md").write_text("# Title\n", encoding="utf-8")
-    (docs_dir / "b.txt").write_text("plain\n", encoding="utf-8")
-
-    r = runner.invoke(cli.app, ["import", str(docs_dir)])
-    assert r.exit_code == 0
-    assert "2 inserted" in r.stdout
-    # db is created inside the target directory, not the cwd
-    assert default_db_path(docs_dir).exists()
-
-
-@pytest.mark.xfail(
-    reason=(
-        "W0-BE: ResolvedTaskConfig dropped data_path (cli/commands.py's "
-        "ServeCommand/SuggestCommand still read it) and the tasks table gained v3 columns that "
-        "TaskRepository._create()'s positional INSERT doesn't account for. Both are outside "
-        "W0-BE's OWNS (cli/commands.py is W3-CLI's; db/tasks.py is W1-TASKS's). See "
-        "docs/refactor-plan.md §4."
-    ),
-    strict=True,
-)
-def test_serve_directory_of_documents(tmp_path, _no_serve):
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
-    (docs_dir / "a.md").write_text("# Title\n", encoding="utf-8")
-
-    r = runner.invoke(cli.app, ["serve", str(docs_dir), "--no-browser", "--yes"])
-    assert r.exit_code == 0
-    assert default_db_path(docs_dir).exists()
-
-
-def test_single_document_file_rejected_by_cli(tmp_path, monkeypatch, capsys):
-    md = tmp_path / "notes.md"
-    md.write_text("# hi", encoding="utf-8")
-    code = _run_cli(monkeypatch, ["serve", str(md), "--no-browser", "--yes"])
-    assert code == 1
-    captured = capsys.readouterr()
-    assert "not a supported target" in captured.err
-    assert "directory" in captured.err
+def test_database_still_constructible(tmp_path):
+    with Database(tmp_path / "db.sqlite") as db:
+        assert db.tasks is not None
