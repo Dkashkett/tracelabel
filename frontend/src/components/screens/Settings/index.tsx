@@ -2,16 +2,12 @@ import * as React from "react";
 import { useSettings, usePatchSettings } from "@/api/queries/settings";
 import type { SettingsPatch } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-const THEMES = ["system", "light", "dark"] as const;
-type Theme = (typeof THEMES)[number];
-
-const inputClasses =
-  "rounded-lg border border-line bg-transparent px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-50";
+import { CheckIcon, LockIcon, SettingsIcon } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
+import { Notice, PageFrame, PageHeader, SectionCard } from "@/components/ui/layout";
 
 export default function Settings() {
-  const { data: settings, isPending } = useSettings();
+  const { data: settings, isPending, isError } = useSettings();
   const patchSettings = usePatchSettings();
 
   // Local form state, seeded from the loaded settings once they arrive. Kept as
@@ -19,7 +15,6 @@ export default function Settings() {
   // cleared to "" in the UI even though the API type is `string | null`.
   const [annotator, setAnnotator] = React.useState("");
   const [defaultLlmModel, setDefaultLlmModel] = React.useState("");
-  const [theme, setTheme] = React.useState<Theme>("system");
   const [showSaved, setShowSaved] = React.useState(false);
 
   React.useEffect(() => {
@@ -30,7 +25,6 @@ export default function Settings() {
     // branch yet. `?? ""` keeps this screen safe either way.
     setAnnotator(settings.annotator ?? "");
     setDefaultLlmModel(settings.default_llm_model ?? "");
-    setTheme(settings.theme);
   }, [settings]);
 
   function handleSave() {
@@ -41,7 +35,6 @@ export default function Settings() {
     const patch: SettingsPatch = {
       annotator,
       default_llm_model: defaultLlmModel === "" ? null : defaultLlmModel,
-      theme,
     };
     patchSettings.mutate(patch, {
       onSuccess: () => {
@@ -53,69 +46,116 @@ export default function Settings() {
 
   if (isPending) {
     return (
-      <div className="p-8">
-        <h1 className="text-lg font-semibold">Settings</h1>
-        <p className="mt-2 text-sm text-ink-muted">Loading settings…</p>
-      </div>
+      <PageFrame width="narrow">
+        <p className="sr-only">Loading settings…</p>
+        <div className="h-8 w-44 animate-pulse rounded-md bg-surface-raised" />
+        <div className="mt-8 h-72 animate-pulse rounded-2xl border border-line bg-surface" />
+      </PageFrame>
+    );
+  }
+
+  if (isError) {
+    return (
+      <PageFrame width="narrow">
+        <Notice tone="danger" title="Settings could not be loaded">
+          Refresh the page and try again.
+        </Notice>
+      </PageFrame>
     );
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-lg font-semibold">Settings</h1>
+    <PageFrame width="narrow">
+      <PageHeader
+        eyebrow="Preferences"
+        title="Settings"
+        description="Defaults used when you create and run local labeling tasks."
+      />
 
-      <div className="mt-6 flex max-w-md flex-col gap-6">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-ink">Annotator name</span>
-          <input
-            type="text"
-            className={inputClasses}
-            value={annotator}
-            onChange={(e) => setAnnotator(e.target.value)}
-            placeholder="e.g. dan"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-ink">Default LLM model</span>
-          <input
-            type="text"
-            className={inputClasses}
-            value={defaultLlmModel}
-            onChange={(e) => setDefaultLlmModel(e.target.value)}
-            placeholder="e.g. gpt-4o-mini"
-          />
-        </label>
-
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="text-sm font-medium text-ink">Theme</legend>
-          <div className="flex gap-2">
-            {THEMES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={theme === option}
-                onClick={() => setTheme(option)}
-                className={cn(
-                  "rounded-lg border px-3 py-2 text-sm capitalize transition-colors",
-                  theme === option
-                    ? "border-accent bg-accent text-accent-fg"
-                    : "border-line bg-transparent text-ink-muted hover:border-line-strong hover:bg-surface-raised",
-                )}
-              >
-                {option}
-              </button>
-            ))}
+      <SectionCard className="mt-8 overflow-hidden">
+        <div className="flex items-start gap-3 border-b border-line px-5 py-5 sm:px-6">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/25 bg-accent/[0.07] text-accent-strong">
+            <SettingsIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-ink">Labeling defaults</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-muted">
+              Applied to new work while remaining editable per task.
+            </p>
           </div>
-        </fieldset>
-
-        <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={patchSettings.isPending}>
-            {patchSettings.isPending ? "Saving…" : "Save"}
-          </Button>
-          {showSaved && <span className="text-sm text-ink-muted">Saved</span>}
         </div>
-      </div>
-    </div>
+
+        <form
+          className="space-y-6 p-5 sm:p-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSave();
+          }}
+        >
+          <label className="block">
+            <span className="text-xs font-semibold text-ink">Annotator name</span>
+            <Input
+              type="text"
+              className="mt-2"
+              value={annotator}
+              onChange={(event) => {
+                setAnnotator(event.target.value);
+                setShowSaved(false);
+              }}
+              placeholder="e.g. dan"
+            />
+            <span className="mt-1.5 block text-xs leading-5 text-ink-faint">
+              Included with every annotation so exported labels retain authorship.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold text-ink">Default LLM model</span>
+            <Input
+              type="text"
+              className="mt-2 font-mono text-xs"
+              value={defaultLlmModel}
+              onChange={(event) => {
+                setDefaultLlmModel(event.target.value);
+                setShowSaved(false);
+              }}
+              placeholder="e.g. gpt-4o-mini"
+            />
+            <span className="mt-1.5 block text-xs leading-5 text-ink-faint">
+              Used for optional suggestion generation when no model is specified.
+            </span>
+          </label>
+
+          {patchSettings.isError && (
+            <Notice tone="danger" title="Settings were not saved">
+              {(patchSettings.error as Error).message}
+            </Notice>
+          )}
+
+          <div className="flex items-center gap-3 border-t border-line pt-5">
+            <Button type="submit" disabled={patchSettings.isPending}>
+              {patchSettings.isPending ? "Saving…" : "Save settings"}
+            </Button>
+            {showSaved && (
+              <span
+                role="status"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-pass"
+              >
+                <CheckIcon className="h-3.5 w-3.5" />
+                Saved
+              </span>
+            )}
+          </div>
+        </form>
+      </SectionCard>
+
+      <Notice className="mt-5" title="Local by design">
+        <span className="inline-flex items-start gap-2">
+          <LockIcon className="mt-1 h-3.5 w-3.5 shrink-0 text-ink-faint" />
+          Settings and labeling data stay in this workspace. API keys are read from your
+          environment and are never stored here.
+        </span>
+      </Notice>
+    </PageFrame>
   );
 }

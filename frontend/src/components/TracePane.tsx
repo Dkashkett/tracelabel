@@ -70,8 +70,14 @@ export function TracePane() {
   }
 
   return (
-    <div ref={parentRef} className="h-full overflow-auto bg-bg">
-      <div className="mx-auto max-w-[820px] px-6" style={{ height: totalSize, position: "relative" }}>
+    <div
+      ref={parentRef}
+      className="h-full overflow-auto bg-bg bg-[radial-gradient(circle_at_50%_0%,rgb(var(--accent)/0.035),transparent_32rem)]"
+    >
+      <div
+        className="mx-auto max-w-[880px] px-7 py-3 min-[1200px]:px-10"
+        style={{ height: totalSize, position: "relative" }}
+      >
         {items.map((vi) => {
           const row = rows[vi.index];
           const active = isActiveRow(row);
@@ -96,7 +102,7 @@ export function TracePane() {
                 width: "100%",
                 transform: `translateY(${vi.start}px)`,
               }}
-              className={cn("py-1.5", row.kind !== "section-header" && row.indent && "pl-6")}
+              className={cn("py-2", row.kind !== "section-header" && row.indent && "pl-6")}
             >
               {row.kind === "section-header" && <AgentSectionHeader agent={row.agent} />}
               {row.kind === "handoff" && <HandoffDivider turn={row.turn} />}

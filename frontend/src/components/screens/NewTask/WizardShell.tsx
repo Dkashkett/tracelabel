@@ -1,5 +1,9 @@
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ArrowLeftIcon, ArrowRightIcon, SparklesIcon } from "@/components/ui/icons";
+import { Notice, PageFrame, PageHeader, SectionCard } from "@/components/ui/layout";
+import { Stepper } from "@/components/ui/stepper";
 
 export interface WizardShellProps {
   step: number;
@@ -34,75 +38,69 @@ export function WizardShell({
   submitLabel = "Create task",
   children,
 }: WizardShellProps) {
+  const frameRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    frameRef.current?.scrollIntoView?.({ block: "start" });
+  }, [step]);
+
   return (
-    <div className={cn("mx-auto p-8", wide ? "max-w-6xl" : "max-w-3xl")}>
-      <h1 className="text-lg font-semibold text-ink">New task</h1>
-      <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
+    <PageFrame ref={frameRef} width={wide ? "wide" : "default"}>
+      <PageHeader
+        eyebrow={
+          <span className="inline-flex items-center gap-1.5">
+            <SparklesIcon className="h-3.5 w-3.5" />
+            New task
+          </span>
+        }
+        title={stepLabels[step]}
+        description={subtitle}
+      />
 
-      <ol className="mt-6 flex items-center">
-        {stepLabels.map((label, index) => {
-          const isDone = index < step;
-          const isCurrent = index === step;
-          const clickable = isDone;
-          return (
-            <li key={label} className="flex flex-1 items-center last:flex-none">
-              <button
-                type="button"
-                disabled={!clickable}
-                onClick={() => onStepClick(index)}
-                className={cn(
-                  "flex items-center gap-2 rounded-full text-xs font-medium transition-colors",
-                  clickable ? "cursor-pointer" : "cursor-default",
-                )}
-              >
-                <span
-                  className={cn(
-                    "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold tabular-nums transition-colors",
-                    isDone && "bg-accent text-accent-fg",
-                    isCurrent && "border border-accent text-accent-strong",
-                    !isDone && !isCurrent && "bg-surface-raised text-ink-faint",
-                  )}
-                >
-                  {isDone ? "✓" : index + 1}
-                </span>
-                <span className={isCurrent ? "font-semibold text-ink" : "text-ink-faint"}>
-                  {label}
-                </span>
-              </button>
-              {index < stepLabels.length - 1 && (
-                <span
-                  className={cn("mx-3 h-px flex-1", isDone ? "bg-accent" : "bg-line")}
-                  aria-hidden
-                />
+      <Stepper
+        steps={stepLabels}
+        current={step}
+        onStepClick={onStepClick}
+        className="mt-8"
+      />
+
+      <SectionCard className="mt-8 overflow-hidden">
+        <div className={cn("min-h-[23rem] p-5 sm:p-7", wide && "lg:p-8")}>{children}</div>
+
+        {error && (
+          <div className="px-5 pb-5 sm:px-7">
+            <Notice tone="danger">{error}</Notice>
+          </div>
+        )}
+
+        <footer className="flex items-center justify-between gap-3 border-t border-line bg-surface-inset/30 px-5 py-4 sm:px-7">
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <div className="flex gap-2">
+            {step > 0 && (
+              <Button variant="outline" onClick={onBack}>
+                <ArrowLeftIcon className="h-4 w-4" />
+                Back
+              </Button>
+            )}
+            <Button onClick={onNext} disabled={isLastStep && isSubmitting}>
+              {isLastStep ? (
+                isSubmitting ? (
+                  "Creating…"
+                ) : (
+                  submitLabel
+                )
+              ) : (
+                <>
+                  Continue
+                  <ArrowRightIcon className="h-4 w-4" />
+                </>
               )}
-            </li>
-          );
-        })}
-      </ol>
-
-      <div className="mt-6 min-h-[26rem]">{children}</div>
-
-      {error && <p className="mt-3 text-xs text-fail">{error}</p>}
-
-      <div className="mt-8 flex items-center justify-between border-t border-line pt-5">
-        <Button variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <div className="flex gap-2">
-          {step > 0 && (
-            <Button variant="outline" onClick={onBack}>
-              Back
             </Button>
-          )}
-          {!isLastStep ? (
-            <Button onClick={onNext}>Next</Button>
-          ) : (
-            <Button onClick={onNext} disabled={isSubmitting}>
-              {isSubmitting ? "Creating…" : submitLabel}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
+          </div>
+        </footer>
+      </SectionCard>
+    </PageFrame>
   );
 }

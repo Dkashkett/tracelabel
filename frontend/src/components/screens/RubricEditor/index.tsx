@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { ArrowLeftIcon, CheckIcon, SparklesIcon } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
+import { Notice, PageFrame, PageHeader } from "@/components/ui/layout";
 import { RubricBuilder } from "@/components/rubric/RubricBuilder";
 import { RubricPreview } from "@/components/rubric/RubricPreview";
 import { useSchema, usePatchSchema } from "@/api/queries/schema";
@@ -19,21 +23,48 @@ export default function RubricEditor() {
   const [draftFields, setDraftFields] = useState<FieldDef[] | null>(null);
   const [impact, setImpact] = useState<SchemaImpactOut | null>(null);
   const [saved, setSaved] = useState(false);
+  const [pendingPreset, setPendingPreset] = useState<FieldDef[] | null>(null);
+  const [forkDialogOpen, setForkDialogOpen] = useState(false);
+  const [forkName, setForkName] = useState("");
 
   useEffect(() => {
     if (schema && draftFields === null) setDraftFields(schema.fields);
   }, [schema, draftFields]);
 
+  useEffect(() => {
+    if (task && !forkName) setForkName(`${task}_v2`);
+  }, [forkName, task]);
+
   if (isLoading || draftFields === null) {
-    return <div className="p-8 text-sm text-ink-muted">Loading…</div>;
+    return (
+      <PageFrame>
+        <div className="h-8 w-64 animate-pulse rounded bg-surface-raised" />
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          <div className="h-[34rem] animate-pulse rounded-2xl bg-surface" />
+          <div className="h-96 animate-pulse rounded-2xl bg-surface" />
+        </div>
+      </PageFrame>
+    );
   }
   if (isError || !schema) {
-    return <div className="p-8 text-sm text-ink-muted">Rubric not found.</div>;
+    return (
+      <PageFrame width="default">
+        <Notice tone="danger" title="Rubric not found">
+          Return to the project and choose another task.
+        </Notice>
+      </PageFrame>
+    );
   }
 
-  function applyPreset(fields: FieldDef[]) {
-    if (!window.confirm("Replace current fields with this preset? Unsaved edits will be lost.")) return;
-    setDraftFields(fields);
+  function requestPreset(fields: FieldDef[]) {
+    setPendingPreset(structuredClone(fields));
+  }
+
+  function confirmPreset() {
+    if (!pendingPreset) return;
+    setDraftFields(pendingPreset);
+    setPendingPreset(null);
+    setSaved(false);
   }
 
   function save(confirm: boolean, thenReturn = false) {
@@ -43,30 +74,24 @@ export default function RubricEditor() {
       {
         onSuccess: () => {
           setImpact(null);
-          if (thenReturn) {
-            navigate(`/p/${project}`);
-          } else {
-            setSaved(true);
-          }
+          if (thenReturn) navigate(`/p/${project}`);
+          else setSaved(true);
         },
         onError: (error) => {
-          if (error instanceof SchemaImpactError) {
-            setImpact(error.impact);
-          }
+          if (error instanceof SchemaImpactError) setImpact(error.impact);
         },
       },
     );
   }
 
   function forkToNewTask() {
-    if (!project || !task) return;
-    const newName = window.prompt("Name for the forked task", `${task}-v2`);
-    if (!newName) return;
+    if (!project || !forkName.trim()) return;
     createTask.mutate(
-      { name: newName, level: "turn", fields: draftFields ?? [] },
+      { name: forkName.trim(), level: "turn", fields: draftFields ?? [] },
       {
         onSuccess: (created) => {
           setImpact(null);
+          setForkDialogOpen(false);
           navigate(`/p/${project}/t/${created.name}/schema`);
         },
       },
@@ -74,47 +99,119 @@ export default function RubricEditor() {
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-lg font-semibold text-ink">
-        Rubric: {project} / {task}
-      </h1>
-
-      <div className="mt-6 grid gap-8 lg:grid-cols-2">
-        <div className="min-w-0">
-          <RubricBuilder
-            fields={draftFields}
-            onChange={setDraftFields}
-            onApplyPreset={applyPreset}
-          />
-
-          <div className="mt-3 flex items-center gap-2">
-            <Button onClick={() => save(false)} disabled={patchSchema.isPending}>
+    <PageFrame width="wide">
+      <Link
+        to={`/p/${project}`}
+        className="mb-5 inline-flex items-center gap-1.5 rounded-md text-xs text-ink-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
+        <ArrowLeftIcon className="h-3.5 w-3.5" />
+        Back to project
+      </Link>
+      <PageHeader
+        eyebrow={
+          <span className="inline-flex items-center gap-1.5">
+            <SparklesIcon className="h-3.5 w-3.5" />
+            Rubric editor
+          </span>
+        }
+        title={task}
+        description="Shape the exact fields annotators complete for each target."
+        actions={
+          <>
+            {saved && (
+              <span role="status" className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium text-pass">
+                <CheckIcon className="h-3.5 w-3.5" />
+                Saved
+              </span>
+            )}
+            <Button variant="outline" onClick={() => save(false)} disabled={patchSchema.isPending}>
               {patchSchema.isPending ? "Saving…" : "Save"}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => save(false, true)}
-              disabled={patchSchema.isPending}
-            >
+            <Button onClick={() => save(false, true)} disabled={patchSchema.isPending}>
               Done
             </Button>
-            {saved && <span className="text-xs text-ink-muted">Saved</span>}
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div className="min-w-0">
+      {patchSchema.isError && !(patchSchema.error instanceof SchemaImpactError) && (
+        <Notice className="mt-6" tone="danger" title="Rubric was not saved">
+          {(patchSchema.error as Error).message}
+        </Notice>
+      )}
+
+      <div className="mt-8 grid items-start gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+        <RubricBuilder
+          fields={draftFields}
+          onChange={(fields) => {
+            setDraftFields(fields);
+            setSaved(false);
+          }}
+          onApplyPreset={requestPreset}
+        />
+        <div className="lg:sticky lg:top-6">
           <RubricPreview fields={draftFields} />
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(pendingPreset)}
+        onOpenChange={(open) => {
+          if (!open) setPendingPreset(null);
+        }}
+        title="Replace the current rubric?"
+        description="The preset will replace every field in the current draft. Saved annotations are not changed until you save the rubric."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingPreset(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmPreset}>Apply preset</Button>
+          </>
+        }
+      />
 
       {impact && (
         <BreakingChangeDialog
           impact={impact}
           onCancel={() => setImpact(null)}
           onRemoveAnyway={() => save(true)}
-          onForkToNewTask={forkToNewTask}
+          onForkToNewTask={() => {
+            setImpact(null);
+            setForkDialogOpen(true);
+          }}
         />
       )}
-    </div>
+
+      <Dialog
+        open={forkDialogOpen}
+        onOpenChange={setForkDialogOpen}
+        title="Fork to a new task"
+        description="Keep existing annotations intact and apply this rubric to a new task."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setForkDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={forkToNewTask}
+              disabled={!forkName.trim() || createTask.isPending}
+            >
+              {createTask.isPending ? "Creating…" : "Create fork"}
+            </Button>
+          </>
+        }
+      >
+        <label htmlFor="fork-task-name" className="text-xs font-semibold text-ink">
+          Task name
+        </label>
+        <Input
+          id="fork-task-name"
+          className="mt-2 font-mono"
+          value={forkName}
+          onChange={(event) => setForkName(event.target.value)}
+        />
+      </Dialog>
+    </PageFrame>
   );
 }

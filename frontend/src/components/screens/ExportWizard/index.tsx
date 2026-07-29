@@ -4,7 +4,10 @@ import { useExportTask } from "@/api/queries/exports";
 import { useProject } from "@/api/queries/projects";
 import type { ExportQuery } from "@/api/client/exports";
 import { Button } from "@/components/ui/button";
+import { DownloadIcon } from "@/components/ui/icons";
+import { PageFrame } from "@/components/ui/layout";
 import { RadioCard } from "@/components/ui/radio-card";
+import { Stepper } from "@/components/ui/stepper";
 import { cn } from "@/lib/utils";
 
 type ExportFormat = NonNullable<ExportQuery["format"]>;
@@ -34,25 +37,6 @@ const STATUS_OPTIONS: {
   },
 ];
 
-function DownloadIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      <path d="M12 3v11" />
-      <path d="m8 10 4 4 4-4" />
-      <path d="M5 20h14" />
-    </svg>
-  );
-}
-
 function FileIcon({ format }: { format: ExportFormat }) {
   return (
     <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-line bg-surface-inset text-ink-muted">
@@ -73,51 +57,6 @@ function FileIcon({ format }: { format: ExportFormat }) {
         {format}
       </span>
     </div>
-  );
-}
-
-function Stepper({ step, onStepClick }: { step: number; onStepClick: (step: number) => void }) {
-  return (
-    <ol className="mt-8 flex max-w-xl items-center" aria-label="Export progress">
-      {STEPS.map((label, index) => {
-        const complete = index < step;
-        const current = index === step;
-        return (
-          <li key={label} className="flex flex-1 items-center last:flex-none">
-            <button
-              type="button"
-              disabled={!complete}
-              onClick={() => onStepClick(index)}
-              aria-current={current ? "step" : undefined}
-              className={cn(
-                "group flex items-center gap-2 text-xs font-medium outline-none",
-                complete ? "cursor-pointer text-ink-muted hover:text-ink" : "cursor-default",
-                current && "text-ink",
-                !complete && !current && "text-ink-faint",
-              )}
-            >
-              <span
-                className={cn(
-                  "grid h-7 w-7 place-items-center rounded-full border text-[11px] font-semibold tabular-nums transition-colors",
-                  complete && "border-accent bg-accent text-accent-fg",
-                  current && "border-accent bg-accent/10 text-accent-strong shadow-glow",
-                  !complete && !current && "border-line bg-surface text-ink-faint",
-                )}
-              >
-                {complete ? "✓" : index + 1}
-              </span>
-              {label}
-            </button>
-            {index < STEPS.length - 1 && (
-              <span
-                className={cn("mx-3 h-px flex-1", complete ? "bg-accent" : "bg-line")}
-                aria-hidden
-              />
-            )}
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -439,7 +378,7 @@ export default function ExportWizard() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 py-8 sm:px-8 sm:py-10">
+    <PageFrame width="wide" className="max-w-5xl">
       <Link
         to={`/p/${projectSlug}`}
         className="inline-flex items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
@@ -461,11 +400,13 @@ export default function ExportWizard() {
           </div>
         </div>
         <Stepper
-          step={step}
+          steps={STEPS}
+          current={step}
           onStepClick={(nextStep) => {
             setStep(nextStep);
             exportTask.reset();
           }}
+          className="mt-8 max-w-xl"
         />
       </header>
 
@@ -539,6 +480,6 @@ export default function ExportWizard() {
 
         <ExportSummary taskName={taskName} format={format} status={status} joined={joined} />
       </div>
-    </main>
+    </PageFrame>
   );
 }

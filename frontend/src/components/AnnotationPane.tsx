@@ -1,3 +1,4 @@
+import { ArrowRightIcon, SparklesIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { useController } from "@/state/NavContext";
 import { validateDraft } from "@/state/navReducer";
@@ -10,10 +11,17 @@ export function AnnotationPane() {
 
   if (!activeTarget) {
     return (
-      <div className="p-6 text-sm text-ink-muted">
-        No labelable target on this trace — press{" "}
-        <kbd className="rounded bg-surface-raised px-1.5 py-0.5 text-xs font-semibold">n</kbd> for
-        the next trace.
+      <div className="grid h-full place-items-center p-8 text-center">
+        <div className="max-w-xs">
+          <p className="text-sm font-medium text-ink">No labelable target</p>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
+            This trace has no target matching the task configuration. Press{" "}
+            <kbd className="rounded-md border border-line-strong bg-surface-inset px-1.5 py-0.5 font-mono text-[10px] text-ink">
+              n
+            </kbd>{" "}
+            for the next trace.
+          </p>
+        </div>
       </div>
     );
   }
@@ -23,104 +31,152 @@ export function AnnotationPane() {
   const judge = trace.review_of?.[activeTarget.id];
   const showSuggestion = !isReview && !existing && !!state.prefillModel;
   const savedStatus = commitPending ? "saving" : existing ? "saved" : "idle";
-  const targetLabel =
-    activeTarget.type === "trace" ? "trace" : `turn #${activeTarget.turnIdx}`;
+  const targetLabel = activeTarget.type === "trace" ? "Trace label" : `Turn #${activeTarget.turnIdx}`;
   const missingRequired = Object.keys(validateDraft(session.fields, state.draft));
   const canCommit = missingRequired.length === 0;
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-5 text-ink">
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          {targetLabel}
-        </span>
-        {isReview ? (
-          <span className="rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent-strong">
-            {existing ? "reviewed" : `reviewing ${session.review_of}`}
-          </span>
-        ) : (
-          showSuggestion && (
-            <span className="rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent-strong">
-              ✦ suggested by {state.prefillModel}
+    <div className="flex h-full flex-col overflow-hidden text-ink">
+      <div className="shrink-0 border-b border-line bg-surface px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-accent-strong">
+              Annotation
+            </p>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-ink">
+              {targetLabel}
+            </h2>
+          </div>
+          {isReview ? (
+            <span className="rounded-full border border-accent/25 bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent-strong">
+              {existing ? "Reviewed" : `Reviewing ${session.review_of}`}
             </span>
-          )
-        )}
-      </div>
-
-      {isReview && judge && (
-        <div className="mb-5 rounded-xl border border-accent/20 bg-accent/5 p-4">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-accent-strong">
-            {session.review_of} predicted
-          </div>
-          <dl className="space-y-1 text-sm">
-            {session.fields.map((f) => {
-              const v = judge.values[f.name];
-              if (v === undefined || (Array.isArray(v) && v.length === 0)) return null;
-              return (
-                <div key={f.name} className="flex gap-2">
-                  <dt className="shrink-0 text-ink-muted">{f.label}:</dt>
-                  <dd className="min-w-0 font-medium">{Array.isArray(v) ? v.join(", ") : v}</dd>
-                </div>
-              );
-            })}
-          </dl>
+          ) : (
+            showSuggestion && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent-strong">
+                <SparklesIcon className="h-3 w-3" />
+                {state.prefillModel}
+              </span>
+            )
+          )}
         </div>
-      )}
-
-      <div className="flex-1 space-y-6">
-        {session.fields.map((f) => (
-          <div key={f.name}>
-            <label className="mb-2 flex items-baseline gap-1 text-sm font-semibold text-ink">
-              {f.label}
-              {f.required && <span className="text-fail">*</span>}
-            </label>
-            {f.help && <p className="mb-2 text-xs text-ink-faint">{f.help}</p>}
-            <FieldRenderer
-              field={f}
-              value={state.draft[f.name]}
-              setValue={(v) => ctl.setField(f.name, v)}
-              toggle={(opt) => ctl.toggleMulti(f.name, opt)}
-            />
-            {errors[f.name] && <p className="mt-1.5 text-xs font-medium text-fail">{errors[f.name]}</p>}
-          </div>
-        ))}
       </div>
 
-      <div className="mt-6 border-t border-line pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => ctl.commit()}
-            aria-disabled={!canCommit}
-            title={canCommit ? undefined : "Fill in the required fields to continue"}
-            className={cn(
-              "inline-flex items-center rounded-lg px-3.5 py-2 text-sm font-semibold shadow-sm transition-all",
-              canCommit
-                ? "bg-accent text-accent-fg hover:bg-accent-strong"
-                : "cursor-not-allowed bg-surface-raised text-ink-faint shadow-none",
-            )}
-          >
-            {isReview ? "Enter · approve ▸ next" : "Enter · commit ▸ next"}
-          </button>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        {isReview && judge && (
+          <div className="mb-6 rounded-xl border border-accent/25 bg-accent/[0.06] p-4">
+            <div className="mb-3 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-strong">
+              <SparklesIcon className="h-3.5 w-3.5" />
+              {session.review_of} predicted
+            </div>
+            <dl className="space-y-2 text-sm">
+              {session.fields.map((field) => {
+                const value = judge.values[field.name];
+                if (value === undefined || (Array.isArray(value) && value.length === 0)) {
+                  return null;
+                }
+                return (
+                  <div key={field.name}>
+                    <dt className="text-xs text-ink-muted">{field.label}</dt>
+                    <dd className="mt-0.5 font-medium text-ink">
+                      {Array.isArray(value) ? value.join(", ") : value}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        )}
+
+        <div className="space-y-7">
+          {session.fields.map((field, index) => (
+            <section key={field.name}>
+              <div className="mb-2.5 flex items-baseline gap-2">
+                <span className="font-mono text-[9px] text-ink-faint">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <label className="text-sm font-semibold text-ink">
+                  {field.label}
+                  {field.required && (
+                    <>
+                      <span className="ml-1 text-fail">*</span>
+                      <span className="sr-only"> required</span>
+                    </>
+                  )}
+                </label>
+              </div>
+              {field.help && <p className="mb-2.5 pl-7 text-xs leading-5 text-ink-muted">{field.help}</p>}
+              <div className="pl-7">
+                <FieldRenderer
+                  field={field}
+                  value={state.draft[field.name]}
+                  setValue={(value) => ctl.setField(field.name, value)}
+                  toggle={(option) => ctl.toggleMulti(field.name, option)}
+                />
+                {errors[field.name] && (
+                  <p className="mt-2 text-xs font-medium text-fail">{errors[field.name]}</p>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+
+      <footer className="shrink-0 border-t border-line bg-surface/95 px-5 py-4 shadow-[0_-18px_45px_-32px_rgb(0_0_0/0.9)] backdrop-blur">
+        {!canCommit && (
+          <p className="mb-2.5 text-[11px] text-ink-faint">
+            Complete {missingRequired.length} required{" "}
+            {missingRequired.length === 1 ? "field" : "fields"} to continue.
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => ctl.commit()}
+          aria-disabled={!canCommit}
+          title={canCommit ? undefined : "Fill in the required fields to continue"}
+          className={cn(
+            "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm font-semibold outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent/60",
+            canCommit
+              ? "border-accent bg-accent text-accent-fg shadow-glow hover:bg-accent-strong"
+              : "border-line-strong bg-surface-raised text-ink-faint",
+          )}
+        >
+          <span>{isReview ? "Approve and continue" : "Commit and continue"}</span>
+          <span className="inline-flex items-center gap-2">
+            <kbd
+              className={cn(
+                "rounded-md border px-1.5 py-0.5 font-mono text-[9px]",
+                canCommit
+                  ? "border-accent-fg/20 bg-accent-fg/10"
+                  : "border-line bg-surface-inset",
+              )}
+            >
+              Enter
+            </kbd>
+            <ArrowRightIcon className="h-4 w-4" />
+          </span>
+        </button>
+        <div className="mt-2 flex items-center gap-1">
           <button
             type="button"
             onClick={() => ctl.skip()}
-            className="inline-flex items-center rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-surface-raised"
+            className="rounded-lg px-2.5 py-2 text-xs font-medium text-ink-muted outline-none transition-colors hover:bg-surface-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
           >
-            s · skip
+            <kbd className="mr-1 font-mono text-[10px] text-ink-faint">s</kbd>
+            Skip
           </button>
           <button
             type="button"
             onClick={() => ctl.clearDraft()}
-            className="text-xs text-ink-faint transition-colors hover:text-ink-muted"
+            className="rounded-lg px-2.5 py-2 text-xs text-ink-faint outline-none transition-colors hover:bg-surface-raised hover:text-ink-muted focus-visible:ring-2 focus-visible:ring-accent/60"
           >
-            clear
+            Clear
           </button>
           <span className="ml-auto">
             <SavedDot status={savedStatus} />
           </span>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

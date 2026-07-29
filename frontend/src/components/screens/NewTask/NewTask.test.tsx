@@ -87,13 +87,13 @@ function fillName(value: string) {
 }
 
 describe("NewTask", () => {
-  it("blocks Next until the name is valid", async () => {
+  it("blocks Continue until the name is valid", async () => {
     apiMock.projectsApi.getProject.mockResolvedValue(project);
     renderAt("/p/support-triage/tasks/new");
     await screen.findByPlaceholderText("escalation_risk");
 
     fillName("Not Valid!");
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
 
     expect(
       screen.getByText(
@@ -110,16 +110,16 @@ describe("NewTask", () => {
     await screen.findByPlaceholderText("escalation_risk");
 
     fillName("new_task");
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
 
     // Sources step: uncheck one source, narrowing queue_scope.
     expect(screen.getByText(/zendesk\.jsonl · 100 traces/)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
 
     // Level step: cards, not a <select>.
     fireEvent.click(screen.getByRole("radio", { name: /Trace level/ }));
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
 
     // Rubric step: defaults to Pass/fail + reasoning, already editable inline. The
     // preview is interactive, not a dead mock — clicking an option selects it and
@@ -132,7 +132,7 @@ describe("NewTask", () => {
     fireEvent.click(previewPass);
     expect(previewPass.getAttribute("aria-checked")).toBe("true");
 
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
 
     // Review step.
     fireEvent.click(screen.getByText("Create task"));
@@ -159,15 +159,15 @@ describe("NewTask", () => {
     await screen.findByPlaceholderText("escalation_risk");
 
     fillName("new_task");
-    fireEvent.click(screen.getByText("Next"));
-    fireEvent.click(screen.getByText("Next"));
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
 
     expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(2);
-    fireEvent.click(screen.getAllByText("Remove")[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Remove field 2" }));
     expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(1);
 
-    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByText("Create task"));
 
     expect(await screen.findByText("project home")).toBeTruthy();

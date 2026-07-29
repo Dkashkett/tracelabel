@@ -17,10 +17,10 @@ test("browser flow: create project, import a source, create a task, edit its rub
 
   // ── ProjectList: create a project ──
   await page.goto(`${BASE_URL}/`);
-  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByRole("button", { name: "Create your first project" }).click();
   await expect(page.getByRole("dialog", { name: "New project" })).toBeVisible();
-  await page.getByLabel("Name").fill(projectName);
-  await page.getByRole("button", { name: "Create" }).click();
+  await page.getByLabel("Project name").fill(projectName);
+  await page.getByRole("button", { name: "Create project" }).click();
 
   // Lands on ProjectHome once the project exists.
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -29,7 +29,7 @@ test("browser flow: create project, import a source, create a task, edit its rub
   const projectSlug = page.url().split("/p/")[1].split("/")[0];
 
   // ── ProjectHome: go to the import wizard ──
-  await page.getByRole("button", { name: "Add source" }).click();
+  await page.getByRole("link", { name: "Add source" }).first().click();
   await expect(page).toHaveURL(/\/import$/);
 
   // ── ImportWizard: preview and import fixtures/traces.jsonl by server-local path ──
@@ -43,31 +43,31 @@ test("browser flow: create project, import a source, create a task, edit its rub
   // job, for content mode) — its placeholder is the "pasted import" fallback used
   // when this field is left blank (see ImportWizard's handleImport), so fill it in.
   await page.getByPlaceholder("pasted import").fill("traces.jsonl");
-  await page.getByRole("button", { name: "Import" }).click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.getByText(/Import complete\./)).toBeVisible();
   await page.getByRole("link", { name: "Back to project" }).click();
 
   // ── ProjectHome: the imported source is listed; "New task" now opens the New Task
   // wizard's own route instead of a modal. ──
   await expect(page.getByText("traces.jsonl")).toBeVisible();
-  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByRole("link", { name: "New task" }).click();
   await expect(page).toHaveURL(/\/tasks\/new$/);
 
   // ── New Task wizard, step 1: name. Task names must match NAME_PATTERN (lowercase
   // letters, digits, underscores — no hyphens). ──
   const taskName = "browser_flow_task";
   await page.getByPlaceholder("escalation_risk").fill(taskName);
-  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
 
   // ── Step 2: sources — leave the default (all sources selected) and move on. ──
   await expect(page.getByText(/traces\.jsonl · 3 traces/)).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
 
   // ── Step 3: level — a radio card, not a <select>. The label view's totals below
   // are counted in traces (one target per trace), so pick "Trace level" explicitly
   // (it's also the wizard's default). ──
   await page.getByRole("radio", { name: /Trace level/ }).click();
-  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
 
   // ── Step 4: rubric — starts pre-populated with Pass/fail + reasoning, fully
   // editable inline with a live, interactive preview alongside it. Edit the
@@ -77,7 +77,7 @@ test("browser flow: create project, import a source, create a task, edit its rub
   const reasoningLabel = page.locator('input[value="Reasoning"]');
   await reasoningLabel.fill("Why?");
   await expect(page.getByText("Why?")).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
 
   // ── Step 5: review — summary of the whole task, then create. ──
   await expect(page.getByText(taskName)).toBeVisible();

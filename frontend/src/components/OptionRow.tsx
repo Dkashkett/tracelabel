@@ -30,7 +30,7 @@ export function OptionRow({
       data-field-name={field.name}
       data-field-type="single_select"
       onKeyDown={onKeyDown}
-      className="flex flex-wrap gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      className="grid gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
     >
       {options.map((opt, i) => {
         const selected = value === opt;
@@ -43,17 +43,19 @@ export function OptionRow({
             aria-checked={selected}
             onClick={() => onSelect(opt)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all",
+              "group inline-flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-all",
               selected
                 ? tone.button
-                : "border-line bg-surface-raised text-ink-muted hover:border-line-strong hover:bg-surface",
+                : "border-line-strong bg-surface-raised/80 text-ink-muted hover:border-ink-faint hover:bg-surface-overlay hover:text-ink",
             )}
           >
             {i < 9 && (
               <kbd
                 className={cn(
-                  "rounded px-1 text-[10px] font-semibold tabular-nums",
-                  selected ? tone.kbd : "bg-surface-inset text-ink-faint",
+                  "grid h-6 w-6 shrink-0 place-items-center rounded-full border font-mono text-[10px] font-semibold tabular-nums",
+                  selected
+                    ? `${tone.kbd} border-current/30`
+                    : "border-line-strong bg-surface-inset text-ink-faint group-hover:border-ink-faint",
                 )}
               >
                 {i + 1}

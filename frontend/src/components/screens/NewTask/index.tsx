@@ -7,6 +7,7 @@ import { useProject } from "@/api/queries/projects";
 import { useCreateTask } from "@/api/queries/tasks";
 import { PASS_FAIL_FIELDS } from "@/lib/fieldPresets";
 import type { FieldDef, Level, QueueScope } from "@/api/types";
+import { Notice, PageFrame } from "@/components/ui/layout";
 import { WizardShell } from "./WizardShell";
 import { NameStep } from "./steps/NameStep";
 import { SourcesStep } from "./steps/SourcesStep";
@@ -38,10 +39,21 @@ export default function NewTask() {
   const [error, setError] = useState<string | null>(null);
 
   if (isLoading) {
-    return <div className="p-8 text-sm text-ink-muted">Loading…</div>;
+    return (
+      <PageFrame width="default">
+        <div className="h-8 w-40 animate-pulse rounded bg-surface-raised" />
+        <div className="mt-8 h-[32rem] animate-pulse rounded-2xl border border-line bg-surface" />
+      </PageFrame>
+    );
   }
   if (isError || !project || !slug) {
-    return <div className="p-8 text-sm text-ink-muted">Project not found.</div>;
+    return (
+      <PageFrame width="default">
+        <Notice tone="danger" title="Project not found">
+          Return to the project list and choose another workspace.
+        </Notice>
+      </PageFrame>
+    );
   }
 
   const sources = project.sources;

@@ -3,7 +3,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { FolderIcon, PlusIcon } from "@/components/ui/icons";
+import { EmptyState, PageFrame, PageHeader } from "@/components/ui/layout";
 import { useCreateProject, useDeleteProject, useProjects } from "@/api/queries/projects";
+import type { ProjectSummary } from "@/api/types";
 import { FirstRunWelcome } from "./FirstRunWelcome";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectCard } from "./ProjectCard";
@@ -14,6 +18,7 @@ export default function ProjectList() {
   const deleteProject = useDeleteProject();
   const navigate = useNavigate();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ProjectSummary | null>(null);
 
   function handleCreate(name: string, notes: string) {
     createProject.mutate(
@@ -27,9 +32,11 @@ export default function ProjectList() {
     );
   }
 
-  function handleDelete(slug: string) {
-    if (!window.confirm(`Delete project "${slug}"? This cannot be undone.`)) return;
-    deleteProject.mutate(slug);
+  function handleDelete() {
+    if (!pendingDelete) return;
+    deleteProject.mutate(pendingDelete.slug, {
+      onSuccess: () => setPendingDelete(null),
+    });
   }
 
   const isFirstRun = !isLoading && projects?.length === 0;
@@ -39,22 +46,55 @@ export default function ProjectList() {
       {isFirstRun ? (
         <FirstRunWelcome onCreateProject={() => setDialogOpen(true)} />
       ) : (
-        <div className="p-8">
-          <div className="flex items-center justify-between">
-            <h1 className="text-lg font-semibold text-ink">Projects</h1>
-            <Button onClick={() => setDialogOpen(true)}>New project</Button>
-          </div>
+        <PageFrame>
+          <PageHeader
+            eyebrow="Local workspace"
+            title="Projects"
+            description={
+              projects
+                ? `${projects.length} ${projects.length === 1 ? "project" : "projects"} on this machine`
+                : "Your local trace-labeling workspaces"
+            }
+            actions={
+              <Button onClick={() => setDialogOpen(true)}>
+                <PlusIcon className="h-4 w-4" />
+                New project
+              </Button>
+            }
+          />
 
-          {isLoading && <p className="mt-8 text-sm text-ink-muted">Loading projects…</p>}
-
-          {!isLoading && projects && projects.length > 0 && (
-            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((project) => (
-                <ProjectCard key={project.slug} project={project} onDelete={handleDelete} />
+          {isLoading && (
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2].map((item) => (
+                <div
+                  key={item}
+                  className="h-52 animate-pulse rounded-2xl border border-line bg-surface"
+                />
               ))}
             </div>
           )}
-        </div>
+
+          {!isLoading && projects && projects.length > 0 && (
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => (
+                <ProjectCard
+                  key={project.slug}
+                  project={project}
+                  onDelete={setPendingDelete}
+                />
+              ))}
+            </div>
+          )}
+          {!isLoading && projects?.length === 0 && (
+            <EmptyState
+              className="mt-8"
+              icon={<FolderIcon className="h-5 w-5" />}
+              title="No projects yet"
+              description="Create a project to collect traces, define a rubric, and start labeling."
+              action={<Button onClick={() => setDialogOpen(true)}>Create project</Button>}
+            />
+          )}
+        </PageFrame>
       )}
 
       {dialogOpen && (
@@ -64,6 +104,33 @@ export default function ProjectList() {
           submitting={createProject.isPending}
         />
       )}
+
+      <Dialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="Delete project?"
+        description={
+          pendingDelete
+            ? `This permanently removes “${pendingDelete.name}” and its local tasks, labels, and sources.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteProject.isPending}
+            >
+              {deleteProject.isPending ? "Deleting…" : "Delete project"}
+            </Button>
+          </>
+        }
+      />
     </>
   );
 }

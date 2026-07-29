@@ -5,7 +5,7 @@ export function AgentSectionHeader({ agent }: { agent: string }) {
   return (
     <div
       data-agent-section={agent}
-      className="flex items-center gap-1.5 px-4 py-1 text-[10px] font-semibold uppercase tracking-wide"
+      className="flex items-center gap-2 px-4 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.15em]"
       style={{ color: `hsl(${hue}, 45%, 65%)` }}
     >
       <span

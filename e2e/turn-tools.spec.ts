@@ -91,7 +91,7 @@ test("turn mode nests a tool result in its call's activity cascade, but keeps it
   // j follows labelable source turns, so the independently labelable tool result becomes active
   // — the same nested row, now highlighted and still expanded (the specific active step).
   await page.keyboard.press("j");
-  await expect(page.getByText(`turn #${resultTurn.idx}`, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Turn #${resultTurn.idx}` })).toBeVisible();
   await expect(resultRow).toHaveAttribute("data-active", "true");
   await expect(cardToggle).toHaveAttribute("aria-expanded", "true");
 

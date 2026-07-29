@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracelabel"
-version = "0.3.2"
+version = "0.3.3"
 description = "Local-first, lightweight labeling — keyboard-fast, no accounts, no server."
 readme = "README.md"
 authors = [{ name = "Daniel Kashkett" }]

@@ -32,7 +32,6 @@ function renderScreen() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  window.confirm = vi.fn(() => true);
 });
 
 describe("ProjectList", () => {
@@ -73,8 +72,8 @@ describe("ProjectList", () => {
 
     expect(screen.getByRole("dialog", { name: "New project" })).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "My New Project" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "My New Project" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
 
     await waitFor(() =>
       expect(apiMock.createProject).toHaveBeenCalledWith({ name: "My New Project", notes: undefined }),
@@ -82,15 +81,19 @@ describe("ProjectList", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("calls the delete mutation after confirming", async () => {
+  it("calls the delete mutation after confirming in the product dialog", async () => {
     apiMock.listProjects.mockResolvedValue(projects);
     apiMock.deleteProject.mockResolvedValue(undefined);
     renderScreen();
 
     await screen.findByText("Support Triage");
-    fireEvent.click(screen.getByRole("button", { name: "Delete Support Triage" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Project actions for Support Triage" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete project" }));
+    expect(screen.getByRole("dialog", { name: "Delete project?" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete project" }));
 
-    expect(window.confirm).toHaveBeenCalled();
     await waitFor(() => expect(apiMock.deleteProject).toHaveBeenCalledWith("support-triage"));
   });
 });

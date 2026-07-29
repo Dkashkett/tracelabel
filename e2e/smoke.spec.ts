@@ -36,8 +36,8 @@ test("workflow: annotations persist, completion is derived, and traces remain re
   // The annotation form rendering is the proof the app booted and the queue loaded.
   const reasoning = page.getByPlaceholder("Why is this a pass or fail?");
   await expect(reasoning).toBeVisible();
-  const tracesToggle = page.getByRole("button", { name: /traces \(\d+\)/i });
-  await expect(tracesToggle).toContainText("▸");
+  const tracesToggle = page.getByRole("button", { name: /^traces\b/i });
+  await expect(tracesToggle).toHaveAttribute("aria-expanded", "false");
 
   // Matched tool output belongs to its assistant row and starts collapsed. Expanding exercises
   // the virtual-row remeasurement path before normal labeling continues.
@@ -98,7 +98,7 @@ test("workflow: annotations persist, completion is derived, and traces remain re
 
   await page.reload();
   await expect(reasoning).toBeVisible();
-  await expect(tracesToggle).toContainText("▸");
+  await expect(tracesToggle).toHaveAttribute("aria-expanded", "false");
 
   // The queue starts at its first item even though only the last target is unfinished. Direct
   // drawer navigation remains available while the footer defaults to collapsed.

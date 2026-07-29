@@ -1,16 +1,23 @@
 import { cn } from "@/lib/utils";
+import { CheckIcon } from "@/components/ui/icons";
 
 export function SavedDot({ status }: { status: "idle" | "saving" | "saved" }) {
   if (status === "idle") return null;
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-xs font-medium",
-        status === "saving" ? "text-ink-faint" : "text-pass",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 font-mono text-[9px] font-medium",
+        status === "saving"
+          ? "border-line bg-surface-inset text-ink-faint"
+          : "border-pass/25 bg-pass/10 text-pass",
       )}
     >
-      <span className={cn(status === "saving" && "animate-pulse")}>●</span>
-      {status === "saving" ? "saving…" : "saved"}
+      {status === "saving" ? (
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink-faint" />
+      ) : (
+        <CheckIcon className="h-3 w-3" />
+      )}
+      {status === "saving" ? "saving…" : "saved locally"}
     </span>
   );
 }

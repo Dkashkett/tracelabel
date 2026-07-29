@@ -19,10 +19,10 @@ export const RadioCard = React.forwardRef<HTMLButtonElement, RadioCardProps>(
         aria-checked={checked}
         onClick={onSelect}
         className={cn(
-          "block w-full cursor-pointer rounded-xl border p-4 text-left transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+          "block w-full cursor-pointer rounded-xl border p-4 text-left shadow-sm transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
           checked
-            ? "border-accent bg-accent/5 ring-1 ring-accent/30"
-            : "border-line bg-surface-raised hover:border-line-strong",
+            ? "border-accent bg-accent/[0.07] ring-1 ring-accent/25"
+            : "border-line-strong bg-surface-raised hover:-translate-y-px hover:border-ink-faint hover:bg-surface-overlay",
           className,
         )}
         {...props}

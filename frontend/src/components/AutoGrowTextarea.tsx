@@ -28,7 +28,7 @@ export function AutoGrowTextarea({
         value={value}
         placeholder={field.placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-[4.5rem] w-full resize-none rounded-lg border border-line bg-surface-raised px-3.5 py-2.5 text-sm leading-relaxed text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="min-h-[5.5rem] w-full resize-none rounded-xl border border-line-strong bg-surface-raised/80 px-3.5 py-3 text-sm leading-6 text-ink shadow-inner shadow-black/10 outline-none transition-all placeholder:text-ink-faint hover:border-ink-faint hover:bg-surface-overlay focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/35"
       />
     </div>
   );

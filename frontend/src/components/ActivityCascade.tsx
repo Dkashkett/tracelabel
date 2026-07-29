@@ -3,7 +3,12 @@ import { cn } from "@/lib/utils";
 import { formatDuration, previewArguments } from "@/lib/format";
 import type { ActivityItem, ToolInteraction } from "@/presentation/turnGroups";
 import type { Turn } from "@/api/types";
-import { KIND_ICON } from "./EventCard";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  WrenchIcon,
+} from "@/components/ui/icons";
+import { EventKindIcon } from "./EventCard";
 import { ContentByType } from "./renderers/ContentByType";
 import { JsonTree } from "./renderers/JsonTree";
 
@@ -49,8 +54,8 @@ function ToolStep({
       }}
       onClick={() => labelable && result && onSelect()}
       className={cn(
-        "rounded-lg border border-line bg-surface-inset/60",
-        active && "ring-2 ring-inset ring-accent/70",
+        "overflow-hidden rounded-xl border border-line-strong/70 bg-surface-inset/70",
+        active && "border-accent/55 shadow-glow ring-1 ring-inset ring-accent/55",
       )}
     >
       <button
@@ -61,11 +66,9 @@ function ToolStep({
           if (labelable && result) onSelect();
           onToggle();
         }}
-        className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-surface-raised"
+        className="flex w-full items-start gap-2.5 px-3 py-2 text-left text-xs outline-none hover:bg-surface-raised/75 focus-visible:bg-surface-raised/75"
       >
-        <span aria-hidden="true" className="mt-px shrink-0 text-ink-faint">
-          🔧
-        </span>
+        <WrenchIcon className="mt-px h-3.5 w-3.5 shrink-0 text-accent-strong" />
         <span className="min-w-0 flex-1">
           <span className="font-semibold text-ink-muted">{call.name}</span>
           {!expanded && (
@@ -80,9 +83,11 @@ function ToolStep({
             error
           </span>
         )}
-        <span aria-hidden="true" className="shrink-0 text-ink-faint">
-          {expanded ? "▾" : "▸"}
-        </span>
+        {expanded ? (
+          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+        ) : (
+          <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+        )}
       </button>
 
       {expanded && (
@@ -147,12 +152,12 @@ function EventStep({
       }}
       onClick={() => turn.labelable && onSelect()}
       className={cn(
-        "rounded-lg border border-line bg-surface-inset/60 px-2.5 py-1.5 text-xs text-ink-muted",
-        active && "ring-2 ring-inset ring-accent/70",
+        "rounded-xl border border-line-strong/70 bg-surface-inset/70 px-3 py-2 text-xs text-ink-muted",
+        active && "border-accent/55 shadow-glow ring-1 ring-inset ring-accent/55",
       )}
     >
       <div className="flex items-center gap-2">
-        <span aria-hidden="true">{KIND_ICON[kind] ?? KIND_ICON.span}</span>
+        <EventKindIcon kind={kind} className="h-3.5 w-3.5 text-accent-strong" />
         <span className="font-medium">{turn.name || kind}</span>
         {typeof turn.duration_ms === "number" && (
           <span className="text-ink-faint">{formatDuration(turn.duration_ms)}</span>
@@ -172,7 +177,11 @@ function EventStep({
             }}
             className="ml-auto shrink-0 text-ink-faint hover:text-ink"
           >
-            {expanded ? "▾" : "▸"}
+            {expanded ? (
+              <ChevronDownIcon className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRightIcon className="h-3.5 w-3.5" />
+            )}
           </button>
         )}
       </div>
@@ -249,7 +258,7 @@ export function ActivityCascade({
     <div
       data-activity-cascade="true"
       onClick={(event) => event.stopPropagation()}
-      className="mt-3 border-l-2 border-accent/20 border-t border-t-line/60 pl-3 pt-2"
+      className="mt-4 border-l border-accent/25 border-t border-t-line/60 pl-3 pt-3"
     >
       <div data-tool-calls="true" className="space-y-1.5">
         {activity.map((item, index) =>

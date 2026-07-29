@@ -1,18 +1,38 @@
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { buttonClassName } from "@/components/ui/button";
+import { ArrowLeftIcon, SparklesIcon } from "@/components/ui/icons";
+import { EmptyState, PageFrame, PageHeader } from "@/components/ui/layout";
 
-// Placeholder — Phase 3 (docs/refactor-plan.md §6). Exists now only so routing
-// doesn't 404; judge-vs-human agreement stats land with the Phase 3 packets.
 export default function Results() {
   const { project, task } = useParams<{ project: string; task: string }>();
 
   return (
-    <div className="p-8">
-      <h1 className="text-lg font-semibold">
-        Results: {project} / {task}
-      </h1>
-      <p className="mt-2 text-sm text-ink-muted">
-        Placeholder screen. Phase 3 fills this in with agreement/confusion stats.
-      </p>
-    </div>
+    <PageFrame width="default">
+      <PageHeader
+        eyebrow="Planned feature"
+        title="Results"
+        description={
+          <>
+            Agreement and error-analysis insights for{" "}
+            <code className="font-mono text-xs text-ink">{task}</code>.
+          </>
+        }
+      />
+      <EmptyState
+        className="mt-8"
+        icon={<SparklesIcon className="h-5 w-5" />}
+        title="Results are coming next"
+        description="This route will summarize judge-versus-human agreement and surface disagreements. No analysis is generated yet."
+        action={
+          <Link
+            to={`/p/${project}`}
+            className={buttonClassName({ variant: "outline" })}
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back to project
+          </Link>
+        }
+      />
+    </PageFrame>
   );
 }

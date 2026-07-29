@@ -17,7 +17,7 @@ export function OptionChips({
       data-form-control
       data-field-name={field.name}
       data-field-type="multi_select"
-      className="flex flex-wrap gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      className="flex flex-wrap gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
     >
       {options.map((opt, i) => {
         const selected = value.includes(opt);
@@ -29,10 +29,10 @@ export function OptionChips({
             aria-checked={selected}
             onClick={() => onToggle(opt)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all",
+              "inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all",
               selected
                 ? "border-accent bg-accent/10 text-accent-strong"
-                : "border-line bg-surface-raised text-ink-muted hover:border-line-strong hover:bg-surface",
+                : "border-line-strong bg-surface-raised/80 text-ink-muted hover:border-ink-faint hover:bg-surface-overlay hover:text-ink",
             )}
           >
             {i < 9 && (

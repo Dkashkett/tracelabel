@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import type { Turn } from "@/api/types";
 import type { ActivityItem } from "@/presentation/turnGroups";
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { ActivityCascade } from "./ActivityCascade";
 import { ContentByType } from "./renderers/ContentByType";
 
@@ -19,7 +20,9 @@ function TurnMeta({ turn }: { turn: Turn }) {
       {turn.name && <span>{turn.name}</span>}
       {turn.tool_call_id && <span>↳ {turn.tool_call_id}</span>}
       {turn.agent && (
-        <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-accent-strong">{turn.agent}</span>
+        <span className="rounded-full border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-accent-strong">
+          {turn.agent}
+        </span>
       )}
       {typeof turn.duration_ms === "number" && <span>{formatDuration(turn.duration_ms)}</span>}
       {turn.status === "error" && (
@@ -44,8 +47,8 @@ function SystemChip({ turn, active, onSelect }: { turn: Turn; active: boolean; o
       }}
       onClick={onSelect}
       className={cn(
-        "mx-auto max-w-2xl rounded-lg border border-line bg-surface-inset/60 px-3 py-2 text-xs text-ink-faint",
-        active && "ring-2 ring-inset ring-accent/70",
+        "mx-auto max-w-2xl rounded-xl border border-line-strong/70 bg-surface-inset/65 px-3.5 py-2.5 font-mono text-[10px] text-ink-faint",
+        active && "border-accent/55 shadow-glow ring-1 ring-inset ring-accent/55",
         turn.labelable && "cursor-pointer",
       )}
     >
@@ -55,9 +58,13 @@ function SystemChip({ turn, active, onSelect }: { turn: Turn; active: boolean; o
           event.stopPropagation();
           setExpanded((value) => !value);
         }}
-        className="flex w-full items-center gap-2 text-left font-medium uppercase tracking-wide"
+        className="flex w-full items-center gap-2 text-left font-medium uppercase tracking-[0.14em]"
       >
-        <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+        {expanded ? (
+          <ChevronDownIcon className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronRightIcon className="h-3.5 w-3.5" />
+        )}
         System prompt
       </button>
       {expanded && (
@@ -125,17 +132,22 @@ export function TurnCard({
         }}
         onClick={onSelect}
         className={cn(
-          "min-w-0 rounded-xl px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-          bubbled ? "max-w-[70%]" : "w-full max-w-none",
-          isUser && "border border-accent/25 bg-accent/10",
-          isAssistant && "border border-line bg-surface-raised",
-          !bubbled && "border border-line bg-surface-inset/60",
-          active && "shadow-glow ring-2 ring-inset ring-accent/70",
-          dimmed && "opacity-60",
+          "min-w-0 rounded-2xl px-4 py-3.5 shadow-card transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+          bubbled ? "max-w-[78%]" : "w-full max-w-none",
+          isUser && "rounded-tr-sm border border-line-strong bg-surface-raised",
+          isAssistant && "rounded-tl-sm border border-accent/20 bg-accent/[0.055]",
+          !bubbled && "border border-line-strong/70 bg-surface-inset/65",
+          active && "border-accent/60 shadow-glow ring-1 ring-inset ring-accent/60",
+          dimmed && !active && "border-line/80 shadow-none",
           turn.labelable && "cursor-pointer",
         )}
       >
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        <div
+          className={cn(
+            "mb-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em]",
+            isAssistant ? "text-accent-strong" : "text-ink-faint",
+          )}
+        >
           {turn.role}
         </div>
         <TurnMeta turn={turn} />
@@ -159,9 +171,10 @@ export function TurnCard({
               setExpanded((value) => !value);
               onSizeChange?.();
             }}
-            className="mt-1 text-xs font-medium text-accent-strong hover:underline"
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline"
           >
-            {expanded ? "collapse ▴" : "expand ▾"}
+            {expanded ? "Collapse" : "Expand"}
+            <ChevronDownIcon className={cn("h-3 w-3", expanded && "rotate-180")} />
           </button>
         )}
 

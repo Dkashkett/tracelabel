@@ -9,11 +9,11 @@ export interface RubricStepProps {
 
 export function RubricStep({ fields, onChange }: RubricStepProps) {
   return (
-    <div className="grid gap-8 lg:grid-cols-2">
+    <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
       <div className="min-w-0">
         <RubricBuilder fields={fields} onChange={onChange} />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 lg:sticky lg:top-6">
         <RubricPreview fields={fields} />
       </div>
     </div>

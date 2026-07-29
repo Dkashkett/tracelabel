@@ -60,13 +60,12 @@ describe("RubricEditor", () => {
     fireEvent.click(screen.getByText("Add field"));
     expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(2);
 
-    fireEvent.click(screen.getAllByText("Remove")[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Remove field 2" }));
     expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(1);
   });
 
   it("applies a preset, replacing the current fields", async () => {
     apiMock.schemaApi.getSchema.mockResolvedValue(schema);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAt("/p/support-triage/t/escalation-risk/schema");
     await screen.findAllByDisplayValue("verdict");
 
@@ -74,6 +73,8 @@ describe("RubricEditor", () => {
     expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(2);
 
     fireEvent.click(screen.getByText("Pass / fail"));
+    expect(screen.getByRole("dialog", { name: "Replace the current rubric?" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Apply preset" }));
     expect(await screen.findAllByDisplayValue("reasoning")).toHaveLength(1);
     expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(2);
   });

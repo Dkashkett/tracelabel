@@ -11,10 +11,13 @@ export interface LevelStepProps {
 export function LevelStep({ level, onChange, selectedTraceCount }: LevelStepProps) {
   return (
     <div>
-      <p className="text-xs font-medium text-ink-muted">Level</p>
-      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+      <p className="text-sm font-semibold text-ink">Choose the labeling unit</p>
+      <p className="mt-1 text-xs leading-5 text-ink-muted">
+        This determines how annotators move through each imported trace.
+      </p>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <RadioCard checked={level === "trace"} onSelect={() => onChange("trace")}>
-          <p className="mb-3 text-sm font-semibold text-ink">Trace level</p>
+          <p className="mb-4 text-sm font-semibold text-ink">Trace level</p>
           <LevelDiagram level="trace" selected={level === "trace"} />
           <p className="mt-3 text-sm text-ink-muted">One label per trace</p>
           <p className="text-xs text-ink-faint">
@@ -23,7 +26,7 @@ export function LevelStep({ level, onChange, selectedTraceCount }: LevelStepProp
         </RadioCard>
 
         <RadioCard checked={level === "turn"} onSelect={() => onChange("turn")}>
-          <p className="mb-3 text-sm font-semibold text-ink">Turn level</p>
+          <p className="mb-4 text-sm font-semibold text-ink">Turn level</p>
           <LevelDiagram level="turn" selected={level === "turn"} />
           <p className="mt-3 text-sm text-ink-muted">One label per turn</p>
           <p className="text-xs text-ink-faint">One target per labelable turn</p>

@@ -1,4 +1,6 @@
 import { Button } from "@/components/ui/button";
+import { PlusIcon, SparklesIcon } from "@/components/ui/icons";
+import { SectionHeading } from "@/components/ui/layout";
 import { FIELD_PRESETS } from "@/lib/fieldPresets";
 import type { FieldDef } from "@/api/types";
 import { FieldEditor } from "./FieldEditor";
@@ -32,29 +34,41 @@ export function RubricBuilder({ fields, onChange, onApplyPreset }: RubricBuilder
 
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-        Start from
-      </p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {FIELD_PRESETS.map((preset) => (
-          <Button key={preset.label} variant="outline" onClick={() => applyPreset(preset.fields)}>
-            {preset.label}
-          </Button>
-        ))}
+      <div className="rounded-xl border border-line bg-surface-inset/35 p-4">
+        <SectionHeading
+          eyebrow="Start from"
+          title="Rubric preset"
+          description="Replace the current fields with a proven starting point."
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          {FIELD_PRESETS.map((preset) => (
+            <Button
+              key={preset.label}
+              size="sm"
+              variant="outline"
+              onClick={() => applyPreset(preset.fields)}
+            >
+              <SparklesIcon className="h-3.5 w-3.5" />
+              {preset.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      <div className="mt-4 flex flex-col gap-3">
+      <div className="mt-5 flex flex-col gap-4">
         {fields.map((field, index) => (
           <FieldEditor
             key={index}
             field={field}
+            index={index}
             onChange={(next) => updateField(index, next)}
             onRemove={() => removeField(index)}
           />
         ))}
       </div>
 
-      <Button variant="outline" className="mt-3" onClick={addField}>
+      <Button variant="outline" className="mt-4 w-full border-dashed" onClick={addField}>
+        <PlusIcon className="h-4 w-4" />
         Add field
       </Button>
     </div>

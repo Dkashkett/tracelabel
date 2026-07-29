@@ -1,3 +1,6 @@
+import { Button } from "@/components/ui/button";
+import { ArrowRightIcon, LockIcon } from "@/components/ui/icons";
+
 interface FirstRunWelcomeProps {
   onCreateProject: () => void;
 }
@@ -120,7 +123,7 @@ export function FirstRunWelcome({ onCreateProject }: FirstRunWelcomeProps) {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_28%,rgb(var(--accent)/0.08),transparent_30%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgb(var(--ink))_1px,transparent_1px),linear-gradient(90deg,rgb(var(--ink))_1px,transparent_1px)] [background-size:64px_64px]" />
 
-      <div className="relative mx-auto flex min-h-[calc(100svh-2.6rem)] w-full max-w-6xl flex-col px-6 pb-10 pt-14 sm:px-10 sm:pt-20 lg:px-12 lg:pt-24">
+      <div className="relative mx-auto flex min-h-[calc(100svh-3.5rem)] w-full max-w-6xl flex-col px-6 pb-10 pt-14 sm:px-10 sm:pt-20 lg:px-12 lg:pt-24">
         <section className="grid items-center gap-16 lg:grid-cols-[1fr_0.95fr] lg:gap-20">
           <div>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-line-strong bg-surface/60 px-3 py-1.5">
@@ -139,36 +142,12 @@ export function FirstRunWelcome({ onCreateProject }: FirstRunWelcomeProps) {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
-              <button
-                type="button"
-                onClick={onCreateProject}
-                className="group inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg shadow-glow transition-all hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-              >
+              <Button type="button" size="lg" onClick={onCreateProject} className="group shadow-glow">
                 Create your first project
-                <svg
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  className="h-4 w-4 transition-transform group-hover:translate-x-0.5"
-                >
-                  <path
-                    d="M3.5 8h9m-3.5-3.5L12.5 8 9 11.5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Button>
               <div className="flex items-center gap-2 text-xs text-ink-muted">
-                <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5">
-                  <path
-                    d="M4.75 7V5.25a3.25 3.25 0 0 1 6.5 0V7m-7.5 0h8.5v6.25h-8.5V7Z"
-                    stroke="currentColor"
-                    strokeWidth="1.25"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                <LockIcon className="h-3.5 w-3.5" />
                 Your data stays on this machine
               </div>
             </div>

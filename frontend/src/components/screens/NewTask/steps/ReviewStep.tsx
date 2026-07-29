@@ -55,8 +55,8 @@ export function ReviewStep({
   const itemCount = level === "trace" ? selectedTraceCount : sources.length === 0 ? 0 : undefined;
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-8 shadow-card">
-      <dl className="mb-6 grid grid-cols-3 divide-x divide-line rounded-lg border border-line">
+    <div className="rounded-2xl border border-line-strong/70 bg-surface-inset/35 p-5 sm:p-7">
+      <dl className="mb-6 grid grid-cols-3 divide-x divide-line overflow-hidden rounded-xl border border-line bg-surface/75">
         <div className="px-3 py-4">
           <dt className="text-xs uppercase tracking-wide text-ink-faint">Sources</dt>
           <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">{selected.size}</dd>

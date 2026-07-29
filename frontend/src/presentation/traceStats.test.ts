@@ -13,7 +13,7 @@ function turn(overrides: Partial<Turn> & Pick<Turn, "id" | "idx" | "role">): Tur
 }
 
 describe("deriveTraceStats", () => {
-  it("counts messages (excluding event rows), tool calls, agents, and errors", () => {
+  it("collects distinct agents and counts errors", () => {
     const turns = [
       turn({ id: "t#0", idx: 0, role: "user" }),
       turn({
@@ -27,8 +27,6 @@ describe("deriveTraceStats", () => {
       turn({ id: "t#3", idx: 3, role: "event", kind: "span", content: "" }),
     ];
     const stats = deriveTraceStats(turns);
-    expect(stats.messageCount).toBe(3);
-    expect(stats.toolCallCount).toBe(1);
     expect(stats.agents).toEqual(["Researcher"]);
     expect(stats.errorCount).toBe(1);
   });

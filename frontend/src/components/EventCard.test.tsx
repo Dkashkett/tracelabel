@@ -54,8 +54,9 @@ describe("EventCard", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("applies dimmed opacity when instructed", () => {
+  it("softens the border when instructed to dim without reducing text opacity", () => {
     const { container } = render(<EventCard turn={eventTurn({})} dimmed />);
-    expect(container.firstElementChild?.className).toContain("opacity-60");
+    expect(container.firstElementChild?.className).toContain("border-line/70");
+    expect(container.firstElementChild?.className).not.toContain("opacity-60");
   });
 });

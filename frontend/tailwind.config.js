@@ -19,6 +19,7 @@ export default {
         surface: {
           DEFAULT: withOpacity("--surface"),
           raised: withOpacity("--surface-raised"),
+          overlay: withOpacity("--surface-overlay"),
           inset: withOpacity("--surface-inset"),
         },
         ink: {
@@ -47,11 +48,13 @@ export default {
       borderRadius: {
         lg: "0.625rem",
         xl: "0.875rem",
+        "2xl": "1.125rem",
       },
       boxShadow: {
-        card: "0 1px 2px 0 rgb(0 0 0 / 0.24), 0 1px 3px 0 rgb(0 0 0 / 0.28)",
+        card: "0 1px 2px 0 rgb(0 0 0 / 0.2), 0 8px 24px -18px rgb(0 0 0 / 0.75)",
+        panel: "0 18px 50px -30px rgb(0 0 0 / 0.9), 0 1px 2px rgb(0 0 0 / 0.35)",
         focus: "0 0 0 3px rgb(var(--accent) / 0.35)",
-        glow: "0 0 0 1px rgb(var(--accent) / 0.5), 0 0 24px 0 rgb(var(--accent-glow) / 0.25)",
+        glow: "0 0 0 1px rgb(var(--accent) / 0.45), 0 0 28px 0 rgb(var(--accent-glow) / 0.2)",
       },
     },
   },

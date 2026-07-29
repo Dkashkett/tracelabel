@@ -15,9 +15,16 @@ export function RubricPreview({ fields }: RubricPreviewProps) {
   const [values, setValues] = useState<Record<string, string | string[]>>({});
 
   return (
-    <div className="rounded-xl border border-line bg-surface-inset p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Preview</p>
-      <div className="mt-4 space-y-6">
+    <div className="overflow-hidden rounded-2xl border border-line-strong/70 bg-surface-inset shadow-panel">
+      <div className="flex items-center justify-between border-b border-line bg-surface px-5 py-3.5">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
+          Annotator preview
+        </p>
+        <span className="rounded-full border border-line bg-surface-inset px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-ink-faint">
+          Live
+        </span>
+      </div>
+      <div className="space-y-6 p-5">
         {fields.map((field, index) => {
           const resolved = toResolvedField(field);
           const hasLabel = field.label?.trim() || field.name.trim();
@@ -56,6 +63,11 @@ export function RubricPreview({ fields }: RubricPreviewProps) {
             </div>
           );
         })}
+        {fields.length === 0 && (
+          <p className="rounded-xl border border-dashed border-line-strong p-6 text-center text-sm text-ink-muted">
+            Add a field to preview the labeling form.
+          </p>
+        )}
       </div>
     </div>
   );

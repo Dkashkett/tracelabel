@@ -1,4 +1,6 @@
 import { Link, useParams } from "react-router-dom";
+import { buttonClassName } from "@/components/ui/button";
+import { CheckIcon } from "@/components/ui/icons";
 import { useController } from "@/state/NavContext";
 
 export function FinishedScreen() {
@@ -7,17 +9,17 @@ export function FinishedScreen() {
   const { labeled, skipped, total } = completionCounts;
 
   return (
-    <main className="grid min-h-0 flex-1 place-items-center bg-bg px-6 py-10">
-      <section className="w-full max-w-xl rounded-xl border border-line bg-surface p-8 text-center shadow-card">
-        <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-pass/15 text-2xl text-pass">
-          ✓
+    <main className="grid min-h-0 flex-1 place-items-center bg-bg bg-[radial-gradient(circle_at_50%_35%,rgb(var(--pass)/0.05),transparent_26rem)] px-6 py-10">
+      <section className="w-full max-w-xl rounded-2xl border border-line-strong bg-surface/90 p-8 text-center shadow-panel">
+        <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl border border-pass/25 bg-pass/10 text-pass shadow-lg shadow-black/20">
+          <CheckIcon className="h-7 w-7" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Dataset finished</h1>
         <p className="mt-2 text-sm text-ink-muted">
           Every target has been labeled or skipped. You can review and edit any trace.
         </p>
 
-        <dl className="my-7 grid grid-cols-3 divide-x divide-line rounded-lg border border-line">
+        <dl className="my-8 grid grid-cols-3 divide-x divide-line overflow-hidden rounded-xl border border-line bg-surface-inset/35">
           <div className="px-3 py-4">
             <dt className="text-xs uppercase tracking-wide text-ink-faint">Labeled</dt>
             <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">{labeled}</dd>
@@ -36,13 +38,13 @@ export function FinishedScreen() {
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg shadow-sm transition-all hover:bg-accent-strong"
+            className={buttonClassName({ size: "lg" })}
           >
             Review traces
           </button>
           <Link
             to={`/p/${project}`}
-            className="rounded-lg border border-line px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-surface-raised"
+            className={buttonClassName({ variant: "outline", size: "lg" })}
           >
             Back to project
           </Link>

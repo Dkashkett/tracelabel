@@ -10,28 +10,29 @@
 
 @layer base {
   :root {
-    /* Material Theme UI — Darker surfaces (#212121 family) */
-    --bg: 33 33 33;
-    --surface: 42 42 42;
-    --surface-raised: 56 56 56;
-    --surface-inset: 23 23 23;
+    /* Dark-only product palette. Surfaces get lighter as they move toward the user. */
+    --bg: 22 23 25;
+    --surface: 29 30 33;
+    --surface-raised: 39 41 45;
+    --surface-overlay: 49 52 58;
+    --surface-inset: 17 18 20;
 
-    /* Ink */
-    --ink: 238 255 255;
-    --ink-muted: 133 133 133;
-    --ink-faint: 92 92 92;
+    /* Informative text stays AA-readable; faint ink is reserved for metadata. */
+    --ink: 239 243 247;
+    --ink-muted: 167 174 185;
+    --ink-faint: 126 135 149;
 
     /* Lines */
-    --line: 51 51 51;
-    --line-strong: 63 63 63;
+    --line: 53 56 62;
+    --line-strong: 76 81 90;
 
-    /* Material Theme blue accent */
-    --accent: 130 170 255;
-    --accent-strong: 163 191 255;
+    /* Cool blue accent from the first-run product preview. */
+    --accent: 128 166 255;
+    --accent-strong: 160 190 255;
     --accent-fg: 13 27 46;
-    --accent-glow: 130 170 255;
+    --accent-glow: 128 166 255;
 
-    /* Semantics: Material Theme's signature green/pink/amber */
+    /* Semantics */
     --pass: 195 232 141;
     --fail: 255 83 112;
     --warn: 255 203 107;
@@ -52,8 +53,44 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
+  ::selection {
+    background: rgb(var(--accent) / 0.28);
+    color: rgb(var(--ink));
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    scroll-margin: 1rem;
+  }
+
+  * {
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+    scrollbar-width: thin;
+  }
+
   input[type="checkbox"],
   input[type="radio"] {
     accent-color: rgb(var(--accent));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -3,13 +3,27 @@ import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import type { Turn } from "@/api/types";
 import { JsonTree } from "./renderers/JsonTree";
+import {
+  ActivityIcon,
+  BotIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  SearchIcon,
+  ShieldIcon,
+  type IconProps,
+} from "@/components/ui/icons";
 
-export const KIND_ICON: Record<string, string> = {
-  retrieval: "🔎",
-  agent: "🤖",
-  guardrail: "🛡️",
-  span: "⚙️",
+const KIND_ICON: Record<string, (props: IconProps) => JSX.Element> = {
+  retrieval: SearchIcon,
+  agent: BotIcon,
+  guardrail: ShieldIcon,
+  span: ActivityIcon,
 };
+
+export function EventKindIcon({ kind, className }: { kind: string; className?: string }) {
+  const KindIcon = KIND_ICON[kind] ?? ActivityIcon;
+  return <KindIcon className={className} />;
+}
 
 export function EventCard({ turn, dimmed }: { turn: Turn; dimmed: boolean }) {
   const [expanded, setExpanded] = useState(false);
@@ -24,12 +38,12 @@ export function EventCard({ turn, dimmed }: { turn: Turn; dimmed: boolean }) {
       data-turn-role="event"
       data-event-kind={kind}
       className={cn(
-        "border-l-2 border-l-accent/30 bg-surface-inset/40 px-4 py-1.5 text-xs text-ink-muted transition-opacity",
-        dimmed && "opacity-60",
+        "rounded-lg border border-line bg-surface-inset/45 px-3 py-2 text-xs text-ink-muted transition-all",
+        dimmed && "border-line/70",
       )}
     >
       <div className="flex items-center gap-2">
-        <span aria-hidden="true">{KIND_ICON[kind] ?? KIND_ICON.span}</span>
+        <EventKindIcon kind={kind} className="h-3.5 w-3.5 text-accent-strong" />
         <span className="font-medium">{turn.name || kind}</span>
         {typeof turn.duration_ms === "number" && (
           <span className="text-ink-faint">{formatDuration(turn.duration_ms)}</span>
@@ -46,7 +60,11 @@ export function EventCard({ turn, dimmed }: { turn: Turn; dimmed: boolean }) {
             onClick={() => setExpanded((value) => !value)}
             className="ml-auto shrink-0 text-ink-faint hover:text-ink"
           >
-            {expanded ? "▾" : "▸"}
+            {expanded ? (
+              <ChevronDownIcon className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRightIcon className="h-3.5 w-3.5" />
+            )}
           </button>
         )}
       </div>

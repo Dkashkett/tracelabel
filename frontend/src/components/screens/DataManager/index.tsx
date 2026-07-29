@@ -1,18 +1,38 @@
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { buttonClassName } from "@/components/ui/button";
+import { ArrowLeftIcon, DatabaseIcon } from "@/components/ui/icons";
+import { EmptyState, PageFrame, PageHeader } from "@/components/ui/layout";
 
-// Placeholder — Phase 2 (docs/refactor-plan.md §6). Exists now only so routing
-// doesn't 404; the filterable/sortable item table lands with the Phase 2 packets.
 export default function DataManager() {
   const { project, task } = useParams<{ project: string; task: string }>();
 
   return (
-    <div className="p-8">
-      <h1 className="text-lg font-semibold">
-        Items: {project} / {task}
-      </h1>
-      <p className="mt-2 text-sm text-ink-muted">
-        Placeholder screen. Phase 2 fills this in with the data manager table.
-      </p>
-    </div>
+    <PageFrame width="default">
+      <PageHeader
+        eyebrow="Planned feature"
+        title="Items"
+        description={
+          <>
+            Browse, search, and filter targets for{" "}
+            <code className="font-mono text-xs text-ink">{task}</code>.
+          </>
+        }
+      />
+      <EmptyState
+        className="mt-8"
+        icon={<DatabaseIcon className="h-5 w-5" />}
+        title="The data manager is coming next"
+        description="This route is reserved for a sortable, filterable view of task targets. Labeling data remains available in the workspace today."
+        action={
+          <Link
+            to={`/p/${project}`}
+            className={buttonClassName({ variant: "outline" })}
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back to project
+          </Link>
+        }
+      />
+    </PageFrame>
   );
 }

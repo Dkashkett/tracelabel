@@ -49,7 +49,7 @@ describe("Settings screen", () => {
 
     expect(await screen.findByDisplayValue("dan")).toBeTruthy();
     expect(screen.getByDisplayValue("gpt-4o-mini")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "system" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText("Theme")).toBeNull();
   });
 
   it("editing a field and saving calls patchSettings with the expected patch", async () => {
@@ -58,35 +58,32 @@ describe("Settings screen", () => {
     const annotatorInput = await screen.findByDisplayValue("dan");
     fireEvent.change(annotatorInput, { target: { value: "sam" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
 
     await waitFor(() => {
       expect(apiMock.patchSettings).toHaveBeenCalledWith({
         annotator: "sam",
         default_llm_model: "gpt-4o-mini",
-        theme: "system",
       });
     });
 
     expect(await screen.findByText("Saved")).toBeTruthy();
   });
 
-  it("theme selection works", async () => {
+  it("keeps the retired theme setting out of the form and its patch", async () => {
     renderSettings();
 
     await screen.findByDisplayValue("dan");
 
-    const darkButton = screen.getByRole("button", { name: "dark" });
-    fireEvent.click(darkButton);
-    expect(darkButton.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "system" }).getAttribute("aria-pressed")).toBe("false");
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.queryByRole("button", { name: "dark" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "system" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
 
     await waitFor(() => {
-      expect(apiMock.patchSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ theme: "dark" }),
-      );
+      expect(apiMock.patchSettings).toHaveBeenCalledWith({
+        annotator: "dan",
+        default_llm_model: "gpt-4o-mini",
+      });
     });
   });
 });

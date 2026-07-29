@@ -23,7 +23,7 @@ const noop = () => {};
 export function TracePreview({ trace }: { trace: TraceDetail }) {
   if (trace.document) {
     return (
-      <div className="h-72 overflow-auto rounded-lg border border-line">
+      <div className="h-72 overflow-auto rounded-xl border border-line-strong">
         <DocumentPane doc={trace.document} />
       </div>
     );
@@ -34,7 +34,7 @@ export function TracePreview({ trace }: { trace: TraceDetail }) {
   );
 
   return (
-    <div className="max-h-96 space-y-1.5 overflow-auto rounded-lg border border-line bg-bg px-4 py-3">
+    <div className="max-h-96 space-y-1.5 overflow-auto rounded-xl border border-line-strong bg-bg/80 px-4 py-3 shadow-inner shadow-black/20">
       {rows.map((row) => (
         <div key={row.key} className={row.kind !== "section-header" && row.indent ? "pl-6" : undefined}>
           {row.kind === "section-header" && <AgentSectionHeader agent={row.agent} />}

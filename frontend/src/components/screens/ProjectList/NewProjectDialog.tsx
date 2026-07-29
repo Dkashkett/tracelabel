@@ -1,11 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-// A minimal modal, built locally rather than in components/ui/ — there's no shared
-// Dialog primitive yet, and the brief asks each F2 packet to build its own rather
-// than collide on a shared file. A plain overlay div is enough here; no need for
-// focus-trapping or portal semantics.
 export interface NewProjectDialogProps {
   onCancel: () => void;
   onCreate: (name: string, notes: string) => void;
@@ -15,6 +13,7 @@ export interface NewProjectDialogProps {
 export function NewProjectDialog({ onCancel, onCreate, submitting }: NewProjectDialogProps) {
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const trimmedName = name.trim();
 
@@ -25,54 +24,56 @@ export function NewProjectDialog({ onCancel, onCreate, submitting }: NewProjectD
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onCancel}
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+      title="New project"
+      description="Create a workspace for related traces, tasks, and exports."
+      initialFocusRef={nameRef}
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" form="new-project-form" disabled={!trimmedName || submitting}>
+            {submitting ? "Creating…" : "Create project"}
+          </Button>
+        </>
+      }
     >
-      <div
-        role="dialog"
-        aria-label="New project"
-        className="w-full max-w-sm rounded-lg border border-line bg-surface-raised p-5 shadow-lg"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 className="text-sm font-semibold text-ink">New project</h2>
-        <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="new-project-name" className="text-xs font-medium text-ink-muted">
-              Name
-            </label>
-            <input
-              id="new-project-name"
-              autoFocus
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-              placeholder="Project name"
-            />
-          </div>
-          <div>
-            <label htmlFor="new-project-notes" className="text-xs font-medium text-ink-muted">
-              Notes (optional)
-            </label>
-            <Textarea
-              id="new-project-notes"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              className="mt-1"
-              placeholder="What is this project for?"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!trimmedName || submitting}>
-              {submitting ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+      <form id="new-project-form" className="space-y-5" onSubmit={handleSubmit}>
+        <div>
+          <label htmlFor="new-project-name" className="text-xs font-semibold text-ink">
+            Project name
+          </label>
+          <Input
+            ref={nameRef}
+            id="new-project-name"
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="mt-2"
+            placeholder="Support quality"
+          />
+          <p className="mt-1.5 text-xs leading-5 text-ink-faint">
+            A readable name for the dataset and labeling work.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="new-project-notes" className="text-xs font-semibold text-ink">
+            Notes <span className="font-normal text-ink-faint">optional</span>
+          </label>
+          <Textarea
+            id="new-project-notes"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            className="mt-2"
+            placeholder="What are you evaluating?"
+          />
+        </div>
+      </form>
+    </Dialog>
   );
 }
