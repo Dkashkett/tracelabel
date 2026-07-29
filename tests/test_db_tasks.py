@@ -365,3 +365,84 @@ def test_build_queue_source_scope(conn):
 def test_build_queue_missing_task_raises_not_found(conn):
     with pytest.raises(NotFoundError):
         conn.tasks.build_queue("nope")
+
+
+def test_build_queue_source_ids_scope_dedupes_traces_in_multiple_sources(conn):
+    for i in range(4):
+        conn.traces.import_trace(ctf_trace(id=f"t{i:02d}"), "jsonl")
+    conn.connection.executemany(
+        "INSERT INTO sources (id, name, path, adapter, imported_at, trace_count) "
+        "VALUES (?, ?, NULL, 'jsonl', '2026-01-01T00:00:00Z', 2)",
+        [(1, "a"), (2, "b")],
+    )
+    conn.connection.executemany(
+        "INSERT INTO trace_sources (source_id, trace_id) VALUES (?, ?)",
+        [(1, "t00"), (1, "t02"), (2, "t00"), (2, "t03")],
+    )
+    conn.connection.commit()
+    spec = TaskSpec(
+        name="t",
+        level="trace",
+        fields=[{"name": "verdict", "type": "text"}],
+        label_roles=["assistant"],
+        shuffle=False,
+        annotator="alice",
+        queue_scope={"type": "source", "source_ids": [1, 2]},
+    )
+    conn.tasks.create(spec)
+    # t00 belongs to both sources but must appear once.
+    assert conn.tasks.build_queue("t") == ["t00", "t02", "t03"]
+
+
+# ── list_summaries() / _total() honor queue_scope ───────────────────────────
+
+
+def test_list_summaries_total_scoped_to_source_at_trace_level(conn):
+    for i in range(4):
+        conn.traces.import_trace(ctf_trace(id=f"t{i:02d}"), "jsonl")
+    conn.connection.execute(
+        "INSERT INTO sources (id, name, path, adapter, imported_at, trace_count) "
+        "VALUES (1, 'src', NULL, 'jsonl', '2026-01-01T00:00:00Z', 2)"
+    )
+    conn.connection.executemany(
+        "INSERT INTO trace_sources (source_id, trace_id) VALUES (1, ?)",
+        [("t00",), ("t02",)],
+    )
+    conn.connection.commit()
+    spec = TaskSpec(
+        name="t",
+        level="trace",
+        fields=[{"name": "verdict", "type": "text"}],
+        label_roles=["assistant"],
+        shuffle=False,
+        annotator="alice",
+        queue_scope={"type": "source", "source_ids": [1]},
+    )
+    conn.tasks.create(spec)
+    [summary] = conn.tasks.list_summaries()
+    assert summary["total"] == 2
+    assert summary["queue_scope"] == {"type": "source", "source_ids": [1]}
+
+
+def test_list_summaries_total_scoped_to_source_at_turn_level(conn):
+    for i in range(3):
+        conn.traces.import_trace(ctf_trace(id=f"t{i:02d}"), "jsonl")
+    conn.connection.execute(
+        "INSERT INTO sources (id, name, path, adapter, imported_at, trace_count) "
+        "VALUES (1, 'src', NULL, 'jsonl', '2026-01-01T00:00:00Z', 1)"
+    )
+    conn.connection.execute("INSERT INTO trace_sources (source_id, trace_id) VALUES (1, 't00')")
+    conn.connection.commit()
+    spec = TaskSpec(
+        name="t",
+        level="turn",
+        fields=[{"name": "verdict", "type": "text"}],
+        label_roles=["assistant"],
+        shuffle=False,
+        annotator="alice",
+        queue_scope={"type": "source", "source_ids": [1]},
+    )
+    conn.tasks.create(spec)
+    [summary] = conn.tasks.list_summaries()
+    # ctf_trace() has exactly one assistant turn per trace; only t00 is in scope.
+    assert summary["total"] == 1

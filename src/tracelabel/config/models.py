@@ -133,5 +133,6 @@ class TaskSpec:
     suggest_instructions: str | None = None
     review_of: str | None = None
     review_labels_from: str = "judge"
-    # {"type": "all"} | {"type": "source", "source_id": int} | {"type": "filter", ...}
+    # {"type": "all"} | {"type": "source", "source_ids": list[int]} (legacy single
+    # {"type": "source", "source_id": int} still read) | {"type": "filter", ...}
     queue_scope: dict[str, Any] = field(default_factory=lambda: {"type": "all"})

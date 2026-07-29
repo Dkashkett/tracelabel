@@ -1,22 +1,18 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import type { ProjectDetail, TaskDetail } from "@/api/types";
+import type { ProjectDetail } from "@/api/types";
 import ProjectHome from "./index";
 
 const apiMock = vi.hoisted(() => ({
   projectsApi: {
     getProject: vi.fn(),
   },
-  tasksApi: {
-    createTask: vi.fn(),
-  },
 }));
 
 vi.mock("@/api/client", () => ({
   projectsApi: apiMock.projectsApi,
-  tasksApi: apiMock.tasksApi,
 }));
 
 const project: ProjectDetail = {
@@ -33,6 +29,7 @@ const project: ProjectDetail = {
       updated_at: "2026-07-01T00:00:00Z",
       total: 100,
       addressed: 40,
+      queue_scope: { type: "all" },
     },
   ],
   sources: [
@@ -44,18 +41,28 @@ const project: ProjectDetail = {
       imported_at: "2026-06-30T00:00:00Z",
       trace_count: 100,
     },
+    {
+      id: 2,
+      name: "intercom.jsonl",
+      path: "/data/intercom.jsonl",
+      adapter: "ctf",
+      imported_at: "2026-06-30T00:00:00Z",
+      trace_count: 20,
+    },
   ],
 };
 
 function renderAt(path: string) {
-  const router = createMemoryRouter(
-    [{ path: "/p/:project", element: <ProjectHome /> }],
-    { initialEntries: [path] },
-  );
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/p/:project" element={<ProjectHome />} />
+          <Route path="/p/:project/t/:task/label" element={<div>label view</div>} />
+          <Route path="/p/:project/tasks/new" element={<div>new task wizard</div>} />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -78,42 +85,23 @@ describe("ProjectHome", () => {
     expect(screen.getByText("No sources imported yet.")).toBeTruthy();
   });
 
-  it("creates a task with the expected TaskCreate shape", async () => {
+  it("navigates to the new task wizard from the New task button", async () => {
     apiMock.projectsApi.getProject.mockResolvedValue(project);
-    const created: TaskDetail = {
-      name: "new_task",
-      level: "turn",
-      fields: [{ name: "verdict", label: "Verdict", type: "single_select", options: ["pass", "fail"], required: true }],
-      label_roles: ["assistant"],
-      shuffle: false,
-      annotator: "dan",
-      schema_hash: "sha256:x",
-      compat_hash: "sha256:y",
-      queue_scope: { type: "all" },
-      llm_model: null,
-      llm_temperature: null,
-      llm_max_tokens: null,
-      suggest_instructions: null,
-      review_of: null,
-      review_labels_from: "judge",
-      created_at: "2026-07-01T00:00:00Z",
-      updated_at: "2026-07-01T00:00:00Z",
-    };
-    apiMock.tasksApi.createTask.mockResolvedValue(created);
-
     renderAt("/p/support-triage");
-    await screen.findByText("Support Triage");
 
+    await screen.findByText("Support Triage");
     fireEvent.click(screen.getByText("New task"));
-    fireEvent.change(screen.getByPlaceholderText("escalation-risk"), {
-      target: { value: "new_task" },
-    });
-    fireEvent.click(screen.getByText("Create task"));
+
+    expect(await screen.findByText("new task wizard")).toBeTruthy();
+  });
+
+  it("navigates to the label view when clicking anywhere on the task card", async () => {
+    apiMock.projectsApi.getProject.mockResolvedValue(project);
+    renderAt("/p/support-triage");
 
     await screen.findByText("Support Triage");
-    expect(apiMock.tasksApi.createTask).toHaveBeenCalledWith(
-      "support-triage",
-      expect.objectContaining({ name: "new_task", level: "turn" }),
-    );
+    fireEvent.click(screen.getByRole("link", { name: "escalation-risk" }));
+
+    expect(await screen.findByText("label view")).toBeTruthy();
   });
 });

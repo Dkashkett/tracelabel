@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { FieldDef, FieldType } from "@/api/types";
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
@@ -31,15 +32,17 @@ export function FieldEditor({ field, onChange, onRemove }: FieldEditorProps) {
 
   return (
     <div className="rounded-lg border border-line bg-surface-raised p-3">
-      <div className="flex items-center gap-2">
-        <input
-          className="w-40 rounded-lg border border-line bg-transparent px-2 py-1 text-sm text-ink"
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          size="sm"
+          className="w-40 shrink-0"
           value={field.name}
           onChange={(event) => onChange({ ...field, name: event.target.value })}
           placeholder="field_name"
         />
-        <input
-          className="flex-1 rounded-lg border border-line bg-transparent px-2 py-1 text-sm text-ink"
+        <Input
+          size="sm"
+          className="min-w-[10rem] flex-1"
           value={field.label ?? ""}
           onChange={(event) => onChange({ ...field, label: event.target.value })}
           placeholder="Label"
@@ -66,7 +69,7 @@ export function FieldEditor({ field, onChange, onRemove }: FieldEditorProps) {
         </Button>
       </div>
       {!nameValid && (
-        <p className="mt-1 text-xs text-red-500">
+        <p className="mt-1 text-xs text-fail">
           Name must be lowercase letters, numbers, or underscores, starting with a letter.
         </p>
       )}
@@ -75,8 +78,9 @@ export function FieldEditor({ field, onChange, onRemove }: FieldEditorProps) {
         <div className="mt-2 flex flex-col gap-1">
           {(field.options ?? []).map((option, index) => (
             <div key={index} className="flex items-center gap-2">
-              <input
-                className="w-40 rounded-lg border border-line bg-transparent px-2 py-1 text-sm text-ink"
+              <Input
+                size="sm"
+                className="w-40"
                 value={option}
                 onChange={(event) => setOption(index, event.target.value)}
               />
@@ -92,16 +96,18 @@ export function FieldEditor({ field, onChange, onRemove }: FieldEditorProps) {
       )}
 
       {field.type === "text" && (
-        <input
-          className="mt-2 w-full rounded-lg border border-line bg-transparent px-2 py-1 text-sm text-ink"
+        <Input
+          size="sm"
+          className="mt-2"
           value={field.placeholder ?? ""}
           onChange={(event) => onChange({ ...field, placeholder: event.target.value })}
           placeholder="Placeholder text"
         />
       )}
 
-      <input
-        className="mt-2 w-full rounded-lg border border-line bg-transparent px-2 py-1 text-sm text-ink"
+      <Input
+        size="sm"
+        className="mt-2"
         value={field.help ?? ""}
         onChange={(event) => onChange({ ...field, help: event.target.value })}
         placeholder="Help text (optional)"

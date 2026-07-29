@@ -8,8 +8,9 @@ const BASE_URL = "http://127.0.0.1:8419";
 // Unlike smoke.spec.ts (which reaches the label view through the CLI launcher's
 // one-shot fast path), this spec drives every step through the real browser UI
 // against a real spawned backend and no mocks: ProjectList's "New project" dialog ->
-// ImportWizard -> ProjectHome's "New task" dialog -> RubricEditor -> LabelView.
-test("browser flow: create project, import a source, create a task, save its rubric, and label", async ({
+// ImportWizard -> ProjectHome's "New task" -> the New Task wizard (name -> sources ->
+// level -> rubric) -> LabelView.
+test("browser flow: create project, import a source, create a task, edit its rubric, and label", async ({
   page,
 }) => {
   const projectName = `Browser Flow ${Date.now()}`;
@@ -23,6 +24,9 @@ test("browser flow: create project, import a source, create a task, save its rub
 
   // Lands on ProjectHome once the project exists.
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  // The Header breadcrumb (only reachable from the label view) shows the URL slug,
+  // not this display name, so capture it here for that assertion later.
+  const projectSlug = page.url().split("/p/")[1].split("/")[0];
 
   // ── ProjectHome: go to the import wizard ──
   await page.getByRole("button", { name: "Add source" }).click();
@@ -43,41 +47,64 @@ test("browser flow: create project, import a source, create a task, save its rub
   await expect(page.getByText(/Import complete\./)).toBeVisible();
   await page.getByRole("link", { name: "Back to project" }).click();
 
-  // ── ProjectHome: the imported source is listed; create a task ──
+  // ── ProjectHome: the imported source is listed; "New task" now opens the New Task
+  // wizard's own route instead of a modal. ──
   await expect(page.getByText("traces.jsonl")).toBeVisible();
   await page.getByRole("button", { name: "New task" }).click();
-  // Task names must match NewTaskDialog's NAME_PATTERN (lowercase letters, digits,
-  // underscores — no hyphens).
+  await expect(page).toHaveURL(/\/tasks\/new$/);
+
+  // ── New Task wizard, step 1: name. Task names must match NAME_PATTERN (lowercase
+  // letters, digits, underscores — no hyphens). ──
   const taskName = "browser_flow_task";
-  await page.getByPlaceholder("escalation-risk").fill(taskName);
-  // NewTaskDialog defaults to level="turn"; the label view's totals below are
-  // counted in traces (one target per trace), so select "Trace" explicitly.
-  await page.getByLabel("Level").selectOption("trace");
-  // Leave the "Pass / fail" preset (the dialog's default choice) selected — its single
-  // required `verdict` field is exactly what the label-view steps below need.
+  await page.getByPlaceholder("escalation_risk").fill(taskName);
+  await page.getByRole("button", { name: "Next" }).click();
+
+  // ── Step 2: sources — leave the default (all sources selected) and move on. ──
+  await expect(page.getByText(/traces\.jsonl · 3 traces/)).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  // ── Step 3: level — a radio card, not a <select>. The label view's totals below
+  // are counted in traces (one target per trace), so pick "Trace level" explicitly
+  // (it's also the wizard's default). ──
+  await page.getByRole("radio", { name: /Trace level/ }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  // ── Step 4: rubric — starts pre-populated with Pass/fail + reasoning, fully
+  // editable inline with a live, interactive preview alongside it. Edit the
+  // reasoning field's label to prove the inline editor (not just a preset picker)
+  // is live, then move on to the review step. ──
+  await expect(page.locator('input[value="verdict"]')).toBeVisible();
+  const reasoningLabel = page.locator('input[value="Reasoning"]');
+  await reasoningLabel.fill("Why?");
+  await expect(page.getByText("Why?")).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+
+  // ── Step 5: review — summary of the whole task, then create. ──
+  await expect(page.getByText(taskName)).toBeVisible();
   await page.getByRole("button", { name: "Create task" }).click();
 
-  // ── RubricEditor: the preset's field is there; save it unchanged ──
-  await expect(page).toHaveURL(new RegExp(`/t/${taskName}/schema$`));
-  await expect(page.locator('input[value="verdict"]')).toBeVisible();
-  await page.getByText("Save", { exact: true }).click();
-  await expect(page.getByText("Saved")).toBeVisible();
-
-  // ── Back to ProjectHome, then into the label view via the real task link ──
-  await page.goto(`${BASE_URL}/p/${page.url().split("/p/")[1].split("/")[0]}`);
+  // ── Back on ProjectHome: click the task card body (not just the name) into the
+  // label view — the task card is a whole-card click target. ──
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
   await page.getByRole("link", { name: taskName }).click();
   await expect(page).toHaveURL(new RegExp(`/t/${taskName}/label$`));
 
   // ── LabelView: the session for the task we just created is loaded, and a real
-  // commit persists through the same public API smoke.spec.ts checks. ──
+  // commit persists through the same public API smoke.spec.ts checks. The
+  // breadcrumb (tracelabel / {project}) is the only way out of this view. ──
   await expect(page.getByText(taskName, { exact: true })).toBeVisible();
   await expect(page.getByText("0/3", { exact: true })).toBeVisible();
 
-  await page.keyboard.press("1"); // verdict = pass, the only required field
-  // Ctrl+Enter is only needed to commit *from inside a textarea* (a bare Enter there
-  // is a newline, not a commit — see smoke.spec.ts); this task has no text field, so
-  // focus never leaves the radiogroup and a bare Enter commits, matching the on-screen
-  // "Enter · commit" hint.
-  await page.keyboard.press("Enter");
+  // Pick the "pass" verdict (digit 1 acts on the primary select field), then "r"
+  // focuses the reasoning textarea; Ctrl+Enter commits (a bare Enter there is a
+  // newline, not a commit).
+  await page.keyboard.press("1");
+  await page.keyboard.press("r");
+  await page.keyboard.type("looks fine");
+  await page.keyboard.press("Control+Enter");
   await expect(page.getByText("1/3", { exact: true })).toBeVisible();
+
+  // The breadcrumb returns to the project screen.
+  await page.getByRole("link", { name: projectSlug }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${projectSlug}$`));
 });

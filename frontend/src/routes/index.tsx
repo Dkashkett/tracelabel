@@ -3,6 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import DataManager from "@/components/screens/DataManager";
 import ImportWizard from "@/components/screens/ImportWizard";
 import LabelView from "@/components/screens/LabelView";
+import NewTask from "@/components/screens/NewTask";
 import ProjectHome from "@/components/screens/ProjectHome";
 import ProjectList from "@/components/screens/ProjectList";
 import Results from "@/components/screens/Results";
@@ -24,6 +25,7 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/", element: <ProjectList /> },
       { path: "/p/:project", element: <ProjectHome /> },
+      { path: "/p/:project/tasks/new", element: <NewTask /> },
       { path: "/p/:project/import", element: <ImportWizard /> },
       { path: "/p/:project/t/:task/schema", element: <RubricEditor /> },
       { path: "/p/:project/t/:task/items", element: <DataManager /> },

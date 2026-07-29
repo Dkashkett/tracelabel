@@ -48,6 +48,7 @@ def test_list_tasks_after_create(client):
     assert summary["total"] == 0
     assert summary["addressed"] == 0
     assert "compat_hash" in summary and summary["compat_hash"]
+    assert summary["queue_scope"] == {"type": "all"}
 
 
 # ── create ───────────────────────────────────────────────────────────────────
@@ -75,7 +76,8 @@ def test_create_task_without_fields_uses_default(client):
     assert r.status_code == 200
     body = r.json()
     assert body["fields"]  # DEFAULT_FIELDS was applied, not an empty list
-    assert body["fields"][0]["type"] == "text"
+    assert body["fields"][0]["name"] == "verdict"
+    assert body["fields"][0]["type"] == "single_select"
 
 
 def test_create_task_duplicate_name_is_422(client):

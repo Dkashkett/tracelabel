@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AnnotationIn,
@@ -112,10 +113,12 @@ function renderProvider() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <NavProvider project="p" task="t">
-        <Header />
-        <Probe />
-      </NavProvider>
+      <MemoryRouter initialEntries={["/p/p/t/t/label"]}>
+        <NavProvider project="p" task="t">
+          <Header />
+          <Probe />
+        </NavProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -202,7 +205,7 @@ describe("NavProvider completion workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "commit" }));
     await waitFor(() => expect(screen.getByTestId("finished").textContent).toBe("true"));
 
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("workflow").textContent).toBe("review"));
     expect(screen.getByTestId("trace-id").textContent).toBe("a");
@@ -283,7 +286,7 @@ describe("NavProvider target history", () => {
 
     renderProvider();
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
-    expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
     fireEvent.click(screen.getByRole("button", { name: "choose pass" }));
@@ -291,10 +294,10 @@ describe("NavProvider target history", () => {
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("c"));
     await waitFor(() => expect(apiMock.putAnnotation).toHaveBeenCalledTimes(1));
-    expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     await waitFor(() =>
@@ -313,11 +316,11 @@ describe("NavProvider target history", () => {
     fireEvent.click(screen.getByRole("button", { name: "trace two" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("c"));
 
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("b"));
     fireEvent.keyDown(window, { key: "u" });
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
-    expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
   });
@@ -340,7 +343,7 @@ describe("NavProvider target history", () => {
     fireEvent.click(screen.getByRole("button", { name: "choose pass" }));
     fireEvent.click(screen.getByRole("button", { name: "skip" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("b"));
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     expect(screen.getByTestId("draft").textContent).toBe("{}");
@@ -373,7 +376,7 @@ describe("NavProvider target history", () => {
     fireEvent.click(screen.getByRole("button", { name: "choose pass" }));
     fireEvent.click(screen.getByRole("button", { name: "commit" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("b"));
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     expect(screen.getByTestId("draft").textContent).toBe('{"verdict":"pass"}');
@@ -419,11 +422,11 @@ describe("NavProvider target history", () => {
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     fireEvent.click(screen.getByRole("button", { name: "commit" }));
     await waitFor(() =>
-      expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+      expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
         false,
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
     resolveB?.(structuredClone(traces.b));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));

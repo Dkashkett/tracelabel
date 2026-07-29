@@ -155,6 +155,7 @@ class TaskSummary(BaseModel):
     updated_at: str
     total: int
     addressed: int
+    queue_scope: dict[str, Any]
 
 
 class TaskCreate(BaseModel):

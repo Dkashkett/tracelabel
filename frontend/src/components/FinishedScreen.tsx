@@ -1,6 +1,8 @@
+import { Link, useParams } from "react-router-dom";
 import { useController } from "@/state/NavContext";
 
 export function FinishedScreen() {
+  const { project } = useParams<{ project: string }>();
   const { completionCounts, setDrawerOpen } = useController();
   const { labeled, skipped, total } = completionCounts;
 
@@ -30,13 +32,21 @@ export function FinishedScreen() {
           </div>
         </dl>
 
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg shadow-sm transition-all hover:bg-accent-strong"
-        >
-          Review traces
-        </button>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg shadow-sm transition-all hover:bg-accent-strong"
+          >
+            Review traces
+          </button>
+          <Link
+            to={`/p/${project}`}
+            className="rounded-lg border border-line px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-surface-raised"
+          >
+            Back to project
+          </Link>
+        </div>
       </section>
     </main>
   );

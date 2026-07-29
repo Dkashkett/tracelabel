@@ -133,8 +133,12 @@ export interface LLMSettings {
   max_tokens: number;
 }
 
-// { type: "all" } labels everything; { type: "filter" } is Phase 2 (data manager).
-export type QueueScope = { type: "all" } | { type: "filter"; [key: string]: unknown };
+// { type: "all" } labels everything; { type: "source" } scopes to a subset of the
+// project's imports (source_ids); { type: "filter" } is Phase 2 (data manager).
+export type QueueScope =
+  | { type: "all" }
+  | { type: "source"; source_ids: number[] }
+  | { type: "filter"; [key: string]: unknown };
 
 // ── GET/PATCH /api/settings ──
 export interface Settings {
@@ -233,6 +237,7 @@ export interface TaskSummary {
   updated_at: string;
   total: number;
   addressed: number;
+  queue_scope: QueueScope;
 }
 export interface TaskCreate {
   name: string;

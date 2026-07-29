@@ -31,17 +31,19 @@ from tracelabel.api.models import (
 )
 from tracelabel.config.impact import SchemaImpactAnalyzer
 from tracelabel.config.models import TaskSpec
+from tracelabel.config.presets import DEFAULT_FIELDS as _PASS_FAIL_FIELDS
 from tracelabel.ctf.hashing import canonical_json
 from tracelabel.db.database import Database, decode_json
 from tracelabel.errors import NotFoundError
 
 router = APIRouter(prefix="/api/projects/{project}/tasks", tags=["tasks"])
 
-# Used by POST .../tasks when the caller doesn't supply `fields`: one required
-# free-text field, the simplest schema that's still usable. No shared default exists
-# elsewhere (config/models.py's FieldDef has no class-level default field list), so
-# this constant is new to this route module.
-DEFAULT_FIELDS: list[dict[str, Any]] = [{"name": "notes", "type": "text", "required": True}]
+# Used by POST .../tasks when the caller doesn't supply `fields`. Mirrors the
+# frontend's own default (NewTaskDialog's "Pass / fail" preset) so the HTTP API and
+# the UI agree on what a task looks like out of the box.
+DEFAULT_FIELDS: list[dict[str, Any]] = [
+    field.model_dump(exclude_none=True) for field in _PASS_FAIL_FIELDS
+]
 
 # Non-schema columns PATCH .../{task} is allowed to touch. Field/schema changes go
 # through the separate PATCH .../schema endpoint below, never through this one.
@@ -107,6 +109,7 @@ async def list_tasks(
                 updated_at=cast(str, summary["updated_at"]),
                 total=cast(int, summary["total"]),
                 addressed=cast(int, summary["addressed"]),
+                queue_scope=cast(dict[str, Any], summary["queue_scope"]),
             )
         )
     return result

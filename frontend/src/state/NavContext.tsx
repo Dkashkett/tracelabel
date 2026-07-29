@@ -443,7 +443,7 @@ export function NavProvider({
   if (sessionQ.isError || queueQ.isError || traceQ.isError) {
     const err = sessionQ.error ?? queueQ.error ?? traceQ.error;
     return (
-      <div className="grid h-screen place-items-center p-8 text-center text-sm text-red-600">
+      <div className="grid h-screen place-items-center p-8 text-center text-sm text-fail">
         Failed to load: {err instanceof Error ? err.message : "unknown error"}
       </div>
     );

@@ -172,6 +172,7 @@ function toSummary(projectSlug: string, task: TaskDetail): TaskSummary {
     updated_at: task.updated_at,
     total: progress.total,
     addressed: progress.labeled + progress.skipped,
+    queue_scope: task.queue_scope,
   };
 }
 

@@ -1,14 +1,11 @@
 // Project list screen (docs/refactor-plan.md §4 F2-PROJECTS). Cards for each
-// project, a "New project" dialog, and a "Start from demo data" button that routes
-// through the normal import path instead of a special CLI code path.
+// project and a "New project" dialog.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useCreateProject, useDeleteProject, useProjects } from "@/api/queries/projects";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectCard } from "./ProjectCard";
-
-const DEMO_PROJECT_NAME = "Demo";
 
 export default function ProjectList() {
   const { data: projects, isLoading } = useProjects();
@@ -34,29 +31,11 @@ export default function ProjectList() {
     deleteProject.mutate(slug);
   }
 
-  // "Start from demo data" doesn't import anything itself — it just creates a
-  // project and hands off to that project's import screen (F2-IMPORT), which owns
-  // the actual demo-data content and the call to useStartImport. This button's whole
-  // job is: create the project, then navigate. That's why it looks so thin.
-  function handleStartFromDemoData() {
-    createProject.mutate(
-      { name: DEMO_PROJECT_NAME },
-      {
-        onSuccess: (project) => navigate(`/p/${project.slug}/import`),
-      },
-    );
-  }
-
   return (
     <div className="p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-ink">Projects</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleStartFromDemoData} disabled={createProject.isPending}>
-            Start from demo data
-          </Button>
-          <Button onClick={() => setDialogOpen(true)}>New project</Button>
-        </div>
+        <Button onClick={() => setDialogOpen(true)}>New project</Button>
       </div>
 
       {isLoading && <p className="mt-8 text-sm text-ink-muted">Loading projects…</p>}
@@ -64,9 +43,7 @@ export default function ProjectList() {
       {!isLoading && projects?.length === 0 && (
         <div className="mt-16 flex flex-col items-center gap-2 text-center">
           <p className="text-sm font-medium text-ink">No projects yet</p>
-          <p className="text-sm text-ink-muted">
-            Create a project, or start from demo data to see tracelabel in action.
-          </p>
+          <p className="text-sm text-ink-muted">Create a project to get started.</p>
         </div>
       )}
 

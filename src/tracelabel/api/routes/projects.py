@@ -38,6 +38,7 @@ def _task_summaries(database: Database) -> list[TaskSummary]:
                 updated_at=summary["updated_at"],
                 total=summary["total"],
                 addressed=summary["addressed"],
+                queue_scope=summary["queue_scope"],
             )
         )
     return summaries

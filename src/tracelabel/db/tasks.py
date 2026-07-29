@@ -281,10 +281,12 @@ class TaskRepository:
 
     def _scoped_trace_ids(self, scope: dict[str, Any]) -> list[str]:
         if scope.get("type") == "source":
+            source_ids = scope["source_ids"] if "source_ids" in scope else [scope["source_id"]]
             rows = self._connection.execute(
-                "SELECT t.id FROM traces t JOIN trace_sources ts ON ts.trace_id = t.id "
-                "WHERE ts.source_id = ? ORDER BY t.imported_at, t.id",
-                (scope["source_id"],),
+                "SELECT DISTINCT t.id FROM traces t JOIN trace_sources ts ON ts.trace_id = t.id "
+                "WHERE ts.source_id IN (SELECT value FROM json_each(?)) "
+                "ORDER BY t.imported_at, t.id",
+                (canonical_json(source_ids),),
             )
         else:
             rows = self._connection.execute("SELECT id FROM traces ORDER BY imported_at, id")
@@ -309,16 +311,19 @@ class TaskRepository:
                     "updated_at": task["updated_at"],
                     "total": self._total(task),
                     "addressed": addressed,
+                    "queue_scope": decode_json(task["queue_scope"]),
                 }
             )
         return summaries
 
     def _total(self, task: sqlite3.Row) -> int:
-        if task["level"] == "turn":
-            row = self._connection.execute(
-                "SELECT count(*) FROM turns WHERE role IN (SELECT value FROM json_each(?))",
-                (task["label_roles"],),
-            ).fetchone()
-        else:
-            row = self._connection.execute("SELECT count(*) FROM traces").fetchone()
+        scope = cast(dict[str, Any], decode_json(task["queue_scope"]))
+        trace_ids = self._scoped_trace_ids(scope)
+        if task["level"] == "trace":
+            return len(trace_ids)
+        row = self._connection.execute(
+            "SELECT count(*) FROM turns WHERE role IN (SELECT value FROM json_each(?)) "
+            "AND trace_id IN (SELECT value FROM json_each(?))",
+            (task["label_roles"], canonical_json(trace_ids)),
+        ).fetchone()
         return int(row[0])

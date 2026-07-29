@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { SchemaOut } from "@/api/types";
 import { SchemaImpactError } from "@/api/client/schema";
@@ -30,14 +30,15 @@ const schema: SchemaOut = {
 };
 
 function renderAt(path: string) {
-  const router = createMemoryRouter(
-    [{ path: "/p/:project/t/:task/schema", element: <RubricEditor /> }],
-    { initialEntries: [path] },
-  );
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/p/:project/t/:task/schema" element={<RubricEditor />} />
+          <Route path="/p/:project" element={<div>project screen</div>} />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -69,8 +70,12 @@ describe("RubricEditor", () => {
     renderAt("/p/support-triage/t/escalation-risk/schema");
     await screen.findAllByDisplayValue("verdict");
 
-    fireEvent.click(screen.getByText("Freeform notes"));
-    expect(await screen.findAllByDisplayValue("notes")).toHaveLength(1);
+    fireEvent.click(screen.getByText("Add field"));
+    expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(2);
+
+    fireEvent.click(screen.getByText("Pass / fail"));
+    expect(await screen.findAllByDisplayValue("reasoning")).toHaveLength(1);
+    expect(screen.getAllByPlaceholderText("field_name")).toHaveLength(2);
   });
 
   it("saves non-breaking changes", async () => {
@@ -81,6 +86,25 @@ describe("RubricEditor", () => {
 
     fireEvent.click(screen.getByText("Save"));
     expect(await screen.findByText("Saved")).toBeTruthy();
+    expect(apiMock.schemaApi.patchSchema).toHaveBeenCalledWith(
+      "support-triage",
+      "escalation-risk",
+      { fields: schema.fields },
+      false,
+    );
+    // Save alone stays on the rubric editor.
+    expect(screen.queryByText("project screen")).toBeNull();
+  });
+
+  it("Done saves and returns to the project screen", async () => {
+    apiMock.schemaApi.getSchema.mockResolvedValue(schema);
+    apiMock.schemaApi.patchSchema.mockResolvedValue(schema);
+    renderAt("/p/support-triage/t/escalation-risk/schema");
+    await screen.findAllByDisplayValue("verdict");
+
+    fireEvent.click(screen.getByText("Done"));
+
+    expect(await screen.findByText("project screen")).toBeTruthy();
     expect(apiMock.schemaApi.patchSchema).toHaveBeenCalledWith(
       "support-triage",
       "escalation-risk",
