@@ -1,169 +1,20 @@
 # 04 — CLI
 
-Implemented with Typer. Entry point: `tracelabel` (also runnable as `uvx tracelabel …` and
-`python -m tracelabel`). Export and suggest never require a running server (invariant #10).
+**Retired.** This doc described the pre-workspace CLI (`serve`/`tasks list`, `--task`/`--level`/
+`--annotator`/`--shuffle`/`--all`/`--review-of`/`--labels-from`/`--yes` flags), where one server
+process was bound to exactly one project/task/annotator for its whole lifetime.
 
-## 1. Command surface
-
-```
-tracelabel serve   [TARGET] [--task NAME] [--level turn|trace] [--annotator NAME]
-                   [--shuffle/--no-shuffle] [--db PATH] [--port N] [--no-browser] [--yes] [--all]
-tracelabel import  TARGET [--from auto|ctf|adk|datadog|documents] [--db PATH]
-                   [--on-conflict fail|skip] [--skip-invalid] [--as-documents]
-tracelabel export  [--task NAME] [--db PATH] [--format jsonl|csv] [--joined]
-                   [--out PATH] [--status labeled|skipped|all]
-tracelabel tasks   list [--db PATH]
-tracelabel suggest [TARGET] [--task NAME] [--db PATH] [--limit N] [--overwrite] [--concurrency N]
-tracelabel demo    [--port N] [--no-browser]
-```
-
-`TARGET` is a `.yaml`/`.yml` config, a data file (`.jsonl`/`.json`), **or a directory** of
-document files (`.md`/`.markdown`/`.txt`/`.text`/`.html`/`.htm` — the folder-of-docs quick
-start, 07 §4). If it's a data file or directory, an implicit empty config is assumed (all
-defaults). The project directory (where `.tracelabel/` lives) is TARGET itself for a
-directory, otherwise the directory containing TARGET.
-
-A bare single document file (e.g. `notes.md`) is **not** a supported target — it has no real
-use case as a one-trace project. It's rejected with a message pointing at a JSONL of documents
-or a directory of files.
-
-For `serve` and `suggest`, `TARGET` may be omitted: the CLI then looks for `./config.yaml`
-in the current directory and uses it if present, otherwise exits with the "No data file
-given" error (§9, exit 1).
-
-## 2. `serve` (the main verb)
-
-```python
-def serve(target, **cli_flags):
-    raw   = load_yaml(target) if is_yaml(target) else RawConfig(data=target)
-    cfg   = resolve(raw, cli_flags)                    # 03 §4
-    conn  = open_db(cfg)                               # migrations run here (02 §3)
-    port  = pick_port(cli_flags.port or 8377)          # try requested, then next 10; print choice
-    acquire_lock(project_dir, port)                    # 02 §1
-
-    summary = import_file(conn, cfg.data_path, source="jsonl", on_conflict="fail")  # idempotent
-    open_task(conn, cfg, assume_yes=cli_flags.yes)     # drift guard lives here (02 §5)
-
-    ids   = None if cli_flags.all else summary.trace_ids
-    queue = build_queue(conn, cfg, ids)                 # §3 — scoped to the served file by default
-    app   = build_fastapi(conn, cfg, queue)              # 05
-    if not cli_flags.no_browser: open_browser(f"http://127.0.0.1:{port}")
-    scope = f"{len(queue)} traces (whole db)" if cli_flags.all else f"{len(queue)} traces from {cfg.data_path.name}"
-    print(f"tracelabel · task '{cfg.name}' ({cfg.level}-level) · {scope} · http://127.0.0.1:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port)      # 127.0.0.1 ONLY — invariant #6
-```
-
-One `serve` process = one task. Labeling a second dimension is a second invocation with a
-different `--task`.
-
-**File-as-lens (default, opt-out via `--all`):** the queue and progress bar are scoped to the
-traces contained in `cfg.data_path` — the ids the just-completed idempotent import reports
-back (`summary.trace_ids`, file order). The db is a shared pool: traces persist across files,
-annotations key on `(task, target_id, annotator)` and accumulate regardless of which file is
-being served. `export` and `tasks list` stay db-wide (lifetime views over the whole pool);
-only the `serve`/`suggest` queue is scoped. `serve <file> --all` still imports `<file>`
-(idempotent, as always) but then builds the queue from the whole db (`ids=None`, §3) — the
-old, pre-scoping behavior, for the rare "label everything" case.
-
-## 3. Queue ordering (shuffle)
-
-```python
-def build_queue(conn, cfg, trace_ids: list[str] | None) -> list[str]:  # ordered trace ids
-    if trace_ids is None:
-        ids = [r[0] for r in conn.execute("SELECT id FROM traces ORDER BY imported_at, id")]
-    else:
-        ids = list(trace_ids)                          # scoped: file order, as reported by import
-    seed = get_task_seed(conn, cfg.name)              # stored at task creation; stable on resume
-    if seed is not None:
-        random.Random(seed).shuffle(ids)
-    return ids
-```
-
-Turn order within a trace is always `idx` — only trace order shuffles. When scoped, file order
-(the order ids were reported by the import) replaces `imported_at, id` as the base sequential
-order before shuffling.
-
-## 4. `import`
-
-Idempotent by design (02 §4); safe to re-run after appending lines to the JSONL, or after
-re-serving a directory. `--from auto` (default) runs format detection (07 §2), which includes
-the `documents` adapter. `--as-documents` is an alias for `--from documents` on JSONL/JSON
-input — force every line to be interpreted as a document even if it would otherwise sniff as
-something else. A directory target always imports as documents, one per file (07 §4); `--from`
-may not be combined with a directory (each file's extension already determines its content
-type). Prints a summary, including any adapter notes (skipped files, interpreted keys):
+The current CLI (`src/tracelabel/cli/app.py`) is a workspace/project/task launcher:
 
 ```
-imported traces.jsonl: 412 inserted, 88 skipped (duplicate), 0 conflicts, 2 invalid lines skipped
-imported docs: 14 inserted, 0 skipped (duplicate), 0 conflicts, 0 invalid lines skipped
-  skipped 3 unsupported files
+tracelabel [TARGET]      --port --no-browser --dir
+tracelabel demo          --port --no-browser
+tracelabel import FILE   --project --dir
+tracelabel suggest       --project --task --dir --limit --overwrite
+tracelabel export        --project --task --dir --format --out --status --joined
 ```
 
-## 5. `export`
-
-Reads the db directly. Default `--out`: `<task>-annotations.<format>` in the CWD; `-` = stdout.
-
-**Long format (default), one row per annotation.** Columns:
-
-```
-task, trace_id, target_type, target_id, turn_index (NULL for trace-level),
-annotator, status, prefill_model, schema_hash, created_at, updated_at,
-value.<field_name> ...            # one column per field in the task's resolved schema
-```
-
-- JSONL: `values` nested as an object; CSV: flattened `value.verdict`, `value.reasoning`, …
-- Multi-select in CSV: JSON-array string (`'["hallucination","formatting"]'`) — unambiguous
-  to `json.loads` in pandas.
-- Skipped rows appear with empty values unless `--status labeled`.
-
-**`--joined`**: adds `role`, `content`, `content_type`, `trace_metadata`, `source` (turn-level);
-at trace-level it adds `trace_metadata` plus either full serialized `messages` (conversation
-trace) or `content` + `content_type` (document trace) — whichever applies. Either way a pandas
-user never joins back to the source. `trace_metadata` is the vector for dataset/batch
-provenance (10 §5) — it's user-supplied at import time, not synthesized by tracelabel;
-`source` is the import adapter name, not a dataset tag — don't rely on it to identify which
-file a trace came from.
-
-```python
-def export(conn, task, fmt, joined, out, status):
-    schema = load_task_schema(conn, task)
-    rows = conn.execute(BASE_SQL + (JOIN_TURNS_SQL if joined else ""), ...)
-    write(out, flatten(rows, schema.field_names, fmt))
-```
-
-## 6. `tasks list`
-
-```
-TASK        LEVEL  PROGRESS        SCHEMA    UPDATED
-empathy     turn   137/482 turns   a3f2c9…   2026-07-11 18:04
-escalation  trace  200/200 traces  77bd01…   2026-07-09 10:22
-```
-
-## 7. `suggest`
-
-Batch pre-annotation (08). Requires the `[ai]` extra; if litellm is missing:
-`AI assist needs the optional extra: pip install 'tracelabel[ai]'`. Like `serve`, `suggest
-TARGET` runs the same idempotent import first, then scopes its targets to
-`summary.trace_ids` — `tracelabel suggest week-28.jsonl --task empathy` only suggests over
-week 28, not the whole pool. There's no `--all` for `suggest`; pass a file that covers the
-scope you want (or `--limit` a large number against the config's data file).
-
-## 8. `demo`
-
-Copies bundled sample traces (packaged data: ~25 realistic agent traces incl. tool calls, a
-JSON doc, an HTML doc) into a temp project and runs `serve` with the zero-config default.
-This is the README GIF and the entire 15-second pitch: `uvx tracelabel demo`, browser opens,
-`j` `1` `Enter` works immediately. `--no-browser` suppresses the browser auto-open (for
-tmux/remote users and the CI e2e smoke, which drives the server directly).
-
-## 9. Exit codes & conventions
-
-| Code | Meaning |
-|------|---------|
-| 0 | success |
-| 1 | user/config error (bad YAML, invalid CTF, drift declined) |
-| 2 | environment error (port range exhausted, locked project, db newer than app) |
-| 130 | interrupted (Ctrl-C) — must still release the lock |
-
-All prompts (`confirm(...)`) must be bypassable with `--yes` for scripting. Errors go to
-stderr; data (e.g. `export --out -`) to stdout.
+`serve` and `tasks list` are gone — task creation, rubric editing, and task listing all happen in
+the browser now. See the README's [Commands](../../README.md#commands) section for the current
+surface, and `src/tracelabel/cli/app.py`/`commands.py` for the implementation (exit-code mapping,
+constructor-DI'd command classes) directly.

@@ -1,156 +1,113 @@
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import click
 import typer
 
-from tracelabel.config.loader import raw_config_for_target
-from tracelabel.config.models import CliArgs
-from tracelabel.config.resolver import ConfigResolver
-from tracelabel.errors import TraceLabelError, UserError
+from tracelabel.errors import TraceLabelError
+from tracelabel.workspace.workspace import default_workspace_root
 
 from .commands import (
+    AppCommand,
     DemoCommand,
     ExportCommand,
     ImportCommand,
-    ServeCommand,
     SuggestCommand,
-    TasksListCommand,
 )
 from .options import (
     FormatChoice,
     FromChoice,
-    LevelChoice,
     OnConflictChoice,
     StatusChoice,
 )
 
+# `tracelabel [TARGET] --port --no-browser --dir` and `tracelabel <subcommand> ...`
+# can't both be expressed as one Click Group: a Group with its own positional
+# argument is ambiguous about whether the first token is that argument's value or a
+# subcommand name (Click resolves the group's own params first, so `tracelabel
+# import` would bind `target="import"` instead of dispatching to the `import`
+# subcommand). Two separate Typer apps avoid the ambiguity entirely — `run()` below
+# picks one based on whether the first argument names a known subcommand.
 app = typer.Typer(add_completion=False)
-tasks_app = typer.Typer(add_completion=False)
-app.add_typer(tasks_app, name="tasks")
+launcher_app = typer.Typer(add_completion=False)
+
+SUBCOMMANDS = ("demo", "import", "suggest", "export")
+
+DirOption = Annotated[str | None, typer.Option("--dir", help="Workspace directory override")]
+PortOption = Annotated[int, typer.Option("--port")]
+NoBrowserOption = Annotated[bool, typer.Option("--no-browser")]
 
 
-@app.callback()
-def main() -> None:
-    pass
+def _workspace_root(dir_: str | None) -> Path:
+    return default_workspace_root(Path(dir_) if dir_ is not None else None)
 
 
-def target_path(target: str | None) -> Path:
-    if target is not None:
-        return Path(target)
-    fallback = Path("config.yaml")
-    if fallback.exists():
-        return fallback
-    raise UserError("No data file given (arg or `data:` in YAML)")
+@launcher_app.command()
+def main(
+    target: Annotated[str | None, typer.Argument()] = None,
+    port: PortOption = 8377,
+    no_browser: NoBrowserOption = False,
+    dir_: DirOption = None,
+) -> None:
+    """`tracelabel [TARGET]`: launch the server, opening straight into the labeling
+    view for TARGET if one is given, or the project list otherwise.
+    """
+    workspace_root = _workspace_root(dir_)
+    AppCommand().execute(
+        workspace_root,
+        Path(target) if target is not None else None,
+        port,
+        no_browser,
+    )
 
 
 @app.command()
-def serve(
-    target: Annotated[str | None, typer.Argument()] = None,
-    task: Annotated[str | None, typer.Option("--task")] = None,
-    level: Annotated[LevelChoice | None, typer.Option("--level")] = None,
-    annotator: Annotated[str | None, typer.Option("--annotator")] = None,
-    shuffle: Annotated[bool | None, typer.Option("--shuffle/--no-shuffle")] = None,
-    db: Annotated[Path | None, typer.Option("--db")] = None,
-    port: Annotated[int, typer.Option("--port")] = 8377,
-    no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-    all_: Annotated[bool, typer.Option("--all")] = False,
-    review_of: Annotated[str | None, typer.Option("--review-of")] = None,
-    labels_from: Annotated[str | None, typer.Option("--labels-from")] = None,
-    include_all_spans: Annotated[bool, typer.Option("--include-all-spans")] = False,
+def demo(
+    port: PortOption = 8377,
+    no_browser: NoBrowserOption = False,
 ) -> None:
-    path = target_path(target)
-    cli = CliArgs(
-        task=task,
-        level=level.value if level else None,
-        annotator=annotator,
-        shuffle=shuffle,
-        db=db,
-        yes=yes,
-        review_of=review_of,
-        review_labels_from=labels_from,
-    )
-    config = ConfigResolver().resolve(raw_config_for_target(path), cli)
-    project_dir = path if path.is_dir() else path.parent
-    ServeCommand().execute(
-        config,
-        project_dir,
-        db,
-        port,
-        no_browser,
-        yes,
-        serve_all=all_,
-        include_all_spans=include_all_spans,
-    )
+    """Launch against the bundled demo traces."""
+    DemoCommand().execute(default_workspace_root(), port, no_browser)
 
 
 @app.command(name="import")
 def import_(
     target: Annotated[str, typer.Argument()],
+    project: Annotated[str, typer.Option("--project")],
+    dir_: DirOption = None,
     from_: Annotated[FromChoice, typer.Option("--from")] = FromChoice.auto,
-    db: Annotated[Path | None, typer.Option("--db")] = None,
     on_conflict: Annotated[
         OnConflictChoice,
         typer.Option("--on-conflict"),
     ] = OnConflictChoice.fail,
     skip_invalid: Annotated[bool, typer.Option("--skip-invalid")] = False,
     as_documents: Annotated[bool, typer.Option("--as-documents")] = False,
-    include_all_spans: Annotated[bool, typer.Option("--include-all-spans")] = False,
 ) -> None:
     ImportCommand().execute(
+        _workspace_root(dir_),
+        project,
         Path(target),
-        database_path=db,
         from_=from_.value,
         on_conflict=on_conflict.value,
         skip_invalid=skip_invalid,
         as_documents=as_documents,
-        include_all_spans=include_all_spans,
     )
-
-
-@app.command()
-def export(
-    task: Annotated[str | None, typer.Option("--task")] = None,
-    db: Annotated[Path | None, typer.Option("--db")] = None,
-    format: Annotated[FormatChoice, typer.Option("--format")] = FormatChoice.jsonl,
-    joined: Annotated[bool, typer.Option("--joined")] = False,
-    out: Annotated[str | None, typer.Option("--out")] = None,
-    status: Annotated[StatusChoice, typer.Option("--status")] = StatusChoice.all,
-) -> None:
-    ExportCommand().execute(
-        task=task,
-        database_path=db,
-        format=format.value,
-        joined=joined,
-        out=Path(out) if out is not None else None,
-        status=status.value,
-    )
-
-
-@tasks_app.command("list")
-def tasks_list(db: Annotated[Path | None, typer.Option("--db")] = None) -> None:
-    TasksListCommand().execute(db)
 
 
 @app.command()
 def suggest(
-    target: Annotated[str | None, typer.Argument()] = None,
-    task: Annotated[str | None, typer.Option("--task")] = None,
-    db: Annotated[Path | None, typer.Option("--db")] = None,
+    project: Annotated[str, typer.Option("--project")],
+    task: Annotated[str, typer.Option("--task")],
+    dir_: DirOption = None,
     limit: Annotated[int | None, typer.Option("--limit")] = None,
     overwrite: Annotated[bool, typer.Option("--overwrite")] = False,
     concurrency: Annotated[int, typer.Option("--concurrency")] = 4,
 ) -> None:
-    path = target_path(target)
-    config = ConfigResolver().resolve(
-        raw_config_for_target(path),
-        CliArgs(task=task, db=db),
-    )
     summary = SuggestCommand().execute(
-        config,
-        path.parent,
-        db,
+        _workspace_root(dir_),
+        project,
+        task,
         limit=limit,
         overwrite=overwrite,
         concurrency=concurrency,
@@ -160,16 +117,31 @@ def suggest(
 
 
 @app.command()
-def demo(
-    port: Annotated[int, typer.Option("--port")] = 8377,
-    no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
+def export(
+    project: Annotated[str | None, typer.Option("--project")] = None,
+    task: Annotated[str | None, typer.Option("--task")] = None,
+    dir_: DirOption = None,
+    format: Annotated[FormatChoice, typer.Option("--format")] = FormatChoice.jsonl,
+    joined: Annotated[bool, typer.Option("--joined")] = False,
+    out: Annotated[str | None, typer.Option("--out")] = None,
+    status: Annotated[StatusChoice, typer.Option("--status")] = StatusChoice.all,
 ) -> None:
-    DemoCommand().execute(port, no_browser)
+    ExportCommand().execute(
+        _workspace_root(dir_),
+        project,
+        task=task,
+        format=format.value,
+        joined=joined,
+        out=Path(out) if out is not None else None,
+        status=status.value,
+    )
 
 
 def run() -> None:
+    argv = sys.argv[1:]
+    dispatch = app if argv and argv[0] in SUBCOMMANDS else launcher_app
     try:
-        app(standalone_mode=False)
+        dispatch(args=argv, standalone_mode=False)
     except TraceLabelError as error:
         typer.echo(str(error), err=True)
         raise SystemExit(error.exit_code) from error

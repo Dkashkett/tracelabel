@@ -1,16 +1,36 @@
 import { expect, test } from "@playwright/test";
 
-// E2E-01 — the pitch. Load traces → label → persist → finish → review. The focused fixture runs
-// the zero-config default, which is a *trace*-level pass/fail task (design 03 §2), so the label
-// target is the whole trace; `j`/turn navigation and per-turn accent rings do not apply here.
+const PORT = 8399;
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+
+// E2E-01 — the pitch. Load traces → label → persist → finish → review. Reaches the
+// label view via the CLI launcher's fast path (`tracelabel fixtures/traces.jsonl
+// --dir ... --no-browser`, see playwright.config.ts), which idempotently
+// creates a project + task before it starts serving — so by the time the health
+// check answers, the project/task below are guaranteed to already exist. This spec
+// intentionally skips the create → import → rubric browser flow (that's
+// browser-flow.spec.ts's job) so it can focus on exercising the keyboard-driven
+// labeling interactions in depth.
+//
+// The focused fixture runs the launcher's default task, which is a *trace*-level
+// pass/fail task (design 03 §2), so the label target is the whole trace; `j`/turn
+// navigation and per-turn accent rings do not apply here.
 test("workflow: annotations persist, completion is derived, and traces remain reviewable", async ({
   page,
   request,
 }) => {
+  const projects = await (await request.get(`${BASE_URL}/api/projects`)).json();
+  expect(projects.length).toBeGreaterThan(0);
+  const project = projects[0];
+  const projectDetail = await (await request.get(`${BASE_URL}/api/projects/${project.slug}`)).json();
+  const task = projectDetail.tasks[0].name;
+  const taskApi = (suffix: string) =>
+    `${BASE_URL}/api/projects/${project.slug}/tasks/${task}${suffix}`;
+
   const REASON = `e2e smoke ${Date.now()}`;
   const FINAL_REASON = `e2e final ${Date.now()}`;
 
-  await page.goto("/");
+  await page.goto(`${BASE_URL}/p/${project.slug}/t/${task}/label`);
   await expect(page.locator("html")).toHaveClass(/dark/);
 
   // The annotation form rendering is the proof the app booted and the queue loaded.
@@ -38,13 +58,13 @@ test("workflow: annotations persist, completion is derived, and traces remain re
 
   // The real proof is server-side, not DOM state: progress incremented…
   await expect
-    .poll(async () => (await (await request.get("/api/progress")).json()).labeled)
+    .poll(async () => (await (await request.get(taskApi("/progress"))).json()).labeled)
     .toBe(1);
 
   // …and a fresh read of the trace returns the annotation with the reasoning we typed.
-  const queue = await (await request.get("/api/queue")).json();
+  const queue = await (await request.get(taskApi("/queue"))).json();
   const traceId = queue[0].trace_id;
-  const detail = await (await request.get(`/api/traces/${traceId}`)).json();
+  const detail = await (await request.get(taskApi(`/traces/${traceId}`))).json();
   const annotations = Object.values(detail.annotations) as Array<{
     status: string;
     values: Record<string, unknown>;
@@ -64,7 +84,7 @@ test("workflow: annotations persist, completion is derived, and traces remain re
   // progress rather than local mutation bookkeeping.
   expect(queue.length).toBeGreaterThan(2);
   for (const entry of queue.slice(1, -1)) {
-    const response = await request.put("/api/annotations", {
+    const response = await request.put(taskApi("/annotations"), {
       data: {
         target_type: "trace",
         target_id: entry.trace_id,
@@ -97,7 +117,7 @@ test("workflow: annotations persist, completion is derived, and traces remain re
   await page.keyboard.press("Control+Enter");
 
   await expect(page.getByRole("heading", { name: "Dataset finished" })).toBeVisible();
-  const completed = await (await request.get("/api/progress")).json();
+  const completed = await (await request.get(taskApi("/progress"))).json();
   expect(completed.labeled + completed.skipped).toBe(completed.total);
   await expect(page.getByText(`${completed.total}/${completed.total}`, { exact: true })).toBeVisible();
 

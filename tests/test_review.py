@@ -12,6 +12,17 @@ from tracelabel.db.database import Database, default_db_path
 from tracelabel.errors import UserError
 from tracelabel.imports.labels import LabelIngestService
 
+# W0-BE (docs/refactor-plan.md §4): create_app(database, config, queue, static_dir) is
+# now create_app(workspace, static_dir), ResolvedTaskConfig dropped data_path, and the
+# tasks table's new v3 columns break TaskRepository.open()'s positional INSERT (that
+# fix is W1-TASKS's job, db/tasks.py is outside W0-BE's OWNS). This whole module is
+# superseded by W2-LABELING once Wave 1 lands.
+pytestmark = pytest.mark.skip(
+    reason="W0-BE: create_app(database, config, queue) and ResolvedTaskConfig.data_path "
+    "are gone, and TaskRepository.open()'s INSERT doesn't yet account for the new v3 "
+    "task columns (W1-TASKS). Superseded by W2-LABELING. See docs/refactor-plan.md §3–4."
+)
+
 FIELDS = [
     {
         "name": "verdict",

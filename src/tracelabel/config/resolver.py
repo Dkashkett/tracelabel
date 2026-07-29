@@ -31,6 +31,26 @@ def schema_hash(fields: list[FieldDef]) -> str:
     return sha256_hex(canonical_json([canonical_field_dict(field) for field in fields]))
 
 
+def compat_hash(fields: list[dict[str, Any]]) -> str:
+    """Hash only what can invalidate an existing annotation: field names and types.
+
+    Cosmetic edits (label, help, placeholder, order) and additive edits (a new
+    optional field, a new option on a select) leave this unchanged. This is a
+    separate, narrower gate than ``schema_hash`` — the full ``schema_hash`` is still
+    written onto every annotation (it's part of the documented export column
+    contract), but ``compat_hash`` is what decides whether an existing annotation is
+    still compatible with an edited rubric.
+    """
+    return sha256_hex(
+        canonical_json(
+            sorted(
+                ({"name": field["name"], "type": field["type"]} for field in fields),
+                key=lambda field: field["name"],
+            )
+        )
+    )
+
+
 def default_task_name(data: Path, today: date | None = None) -> str:
     current_date = today or date.today()
     return f"{data.stem}-{current_date.isoformat()}"
@@ -75,7 +95,6 @@ class ConfigResolver:
             shuffle=cli.shuffle if cli.shuffle is not None else raw.shuffle,
             annotator=annotator,
             schema_hash=schema_hash(fields),
-            data_path=data,
             llm=raw.llm,
             suggest_instructions=raw.suggest.instructions if raw.suggest else None,
             review_of=review_of,

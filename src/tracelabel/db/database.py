@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ class Database:
 
     def __init__(self, path: Path, *, clock: Clock | None = None) -> None:
         from .annotations import AnnotationRepository
+        from .sources import SourceRepository
         from .tasks import TaskRepository
         from .traces import TraceRepository
 
@@ -37,6 +39,7 @@ class Database:
         self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self._transaction_depth = 0
+        self._transaction_lock = threading.RLock()
         self._closed = False
         resolved_clock = clock or now_iso
         try:
@@ -61,6 +64,11 @@ class Database:
             self.transaction,
             resolved_clock,
         )
+        self.sources: SourceRepository = SourceRepository(
+            self.connection,
+            self.transaction,
+            resolved_clock,
+        )
 
     def _configure(self) -> None:
         self.connection.execute("PRAGMA journal_mode=WAL")
@@ -69,20 +77,30 @@ class Database:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        outermost = self._transaction_depth == 0
-        self._transaction_depth += 1
-        try:
-            if outermost and not self.connection.in_transaction:
-                self.connection.execute("BEGIN")
-            yield self.connection
-            if outermost:
-                self.connection.commit()
-        except BaseException:
-            if outermost:
-                self.connection.rollback()
-            raise
-        finally:
-            self._transaction_depth -= 1
+        """Yield the shared connection inside a transaction, safe to call from any thread.
+
+        ``check_same_thread=False`` (see ``__init__``) lets the connection be shared
+        across threads — jobs.py runs imports and suggestion runs on background
+        threads — but SQLite connections are not safe for *concurrent* use from
+        multiple threads at once. This ``RLock`` serializes ``transaction()`` calls so
+        only one thread is ever inside a transaction at a time, while still allowing
+        the same thread to nest calls (``outermost`` tracks that nesting).
+        """
+        with self._transaction_lock:
+            outermost = self._transaction_depth == 0
+            self._transaction_depth += 1
+            try:
+                if outermost and not self.connection.in_transaction:
+                    self.connection.execute("BEGIN")
+                yield self.connection
+                if outermost:
+                    self.connection.commit()
+            except BaseException:
+                if outermost:
+                    self.connection.rollback()
+                raise
+            finally:
+                self._transaction_depth -= 1
 
     def close(self) -> None:
         if not self._closed:

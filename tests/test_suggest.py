@@ -83,7 +83,6 @@ def _cfg(tmp_path, *, level="turn", with_llm=True, fields=None):
         shuffle=False,
         annotator="alice",
         schema_hash="sh_test",
-        data_path=tmp_path / "traces.jsonl",
         llm=LLMConfig(model="gpt-4o-mini") if with_llm else None,
         suggest_instructions=None,
     )

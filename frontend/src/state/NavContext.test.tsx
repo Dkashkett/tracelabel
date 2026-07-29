@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AnnotationIn,
@@ -112,10 +113,12 @@ function renderProvider() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <NavProvider>
-        <Header />
-        <Probe />
-      </NavProvider>
+      <MemoryRouter initialEntries={["/p/p/t/t/label"]}>
+        <NavProvider project="p" task="t">
+          <Header />
+          <Probe />
+        </NavProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -135,14 +138,17 @@ beforeEach(() => {
 
   apiMock.getSession.mockImplementation(async () => session);
   apiMock.getQueue.mockImplementation(async () => queue.map((item) => ({ ...item })));
-  apiMock.getTrace.mockImplementation(async (id: string) => structuredClone(traces[id]));
+  apiMock.getTrace.mockImplementation(
+    async (_project: string, _task: string, id: string) => structuredClone(traces[id]),
+  );
   apiMock.getProgress.mockImplementation(async () => ({
     unit: "traces",
     total: queue.reduce((sum, item) => sum + item.n_targets, 0),
     labeled: queue.reduce((sum, item) => sum + item.n_labeled, 0),
     skipped: queue.reduce((sum, item) => sum + item.n_skipped, 0),
   }));
-  apiMock.putAnnotation.mockImplementation(async (input: AnnotationIn) => {
+  apiMock.putAnnotation.mockImplementation(
+    async (_project: string, _task: string, input: AnnotationIn) => {
     const out = annotation(input);
     const td = traces[input.target_id];
     const previous = td.annotations[input.target_id];
@@ -151,9 +157,10 @@ beforeEach(() => {
     if (previous?.status === "skipped") queueEntry.n_skipped--;
     if (input.status === "labeled") queueEntry.n_labeled++;
     if (input.status === "skipped") queueEntry.n_skipped++;
-    td.annotations[input.target_id] = out;
-    return out;
-  });
+      td.annotations[input.target_id] = out;
+      return out;
+    },
+  );
 });
 
 describe("NavProvider completion workflow", () => {
@@ -183,6 +190,8 @@ describe("NavProvider completion workflow", () => {
 
     await waitFor(() => expect(screen.getByTestId("finished").textContent).toBe("true"));
     expect(apiMock.putAnnotation).toHaveBeenCalledWith(
+      "p",
+      "t",
       expect.objectContaining({ target_id: "a", status: "labeled" }),
     );
   });
@@ -196,7 +205,7 @@ describe("NavProvider completion workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "commit" }));
     await waitFor(() => expect(screen.getByTestId("finished").textContent).toBe("true"));
 
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("workflow").textContent).toBe("review"));
     expect(screen.getByTestId("trace-id").textContent).toBe("a");
@@ -213,6 +222,8 @@ describe("NavProvider completion workflow", () => {
 
     await waitFor(() => expect(screen.getByTestId("finished").textContent).toBe("true"));
     expect(apiMock.putAnnotation).toHaveBeenCalledWith(
+      "p",
+      "t",
       expect.objectContaining({ target_id: "a", status: "skipped" }),
     );
   });
@@ -275,7 +286,7 @@ describe("NavProvider target history", () => {
 
     renderProvider();
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
-    expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
     fireEvent.click(screen.getByRole("button", { name: "choose pass" }));
@@ -283,10 +294,10 @@ describe("NavProvider target history", () => {
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("c"));
     await waitFor(() => expect(apiMock.putAnnotation).toHaveBeenCalledTimes(1));
-    expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     await waitFor(() =>
@@ -305,11 +316,11 @@ describe("NavProvider target history", () => {
     fireEvent.click(screen.getByRole("button", { name: "trace two" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("c"));
 
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("b"));
     fireEvent.keyDown(window, { key: "u" });
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
-    expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
   });
@@ -332,7 +343,7 @@ describe("NavProvider target history", () => {
     fireEvent.click(screen.getByRole("button", { name: "choose pass" }));
     fireEvent.click(screen.getByRole("button", { name: "skip" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("b"));
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     expect(screen.getByTestId("draft").textContent).toBe("{}");
@@ -351,7 +362,7 @@ describe("NavProvider target history", () => {
     let pendingInput: AnnotationIn | undefined;
     let resolvePut: ((value: AnnotationOut) => void) | undefined;
     apiMock.putAnnotation.mockImplementation(
-      (input: AnnotationIn) =>
+      (_project: string, _task: string, input: AnnotationIn) =>
         new Promise<AnnotationOut>((resolve) => {
           pendingInput = input;
           resolvePut = resolve;
@@ -365,7 +376,7 @@ describe("NavProvider target history", () => {
     fireEvent.click(screen.getByRole("button", { name: "choose pass" }));
     fireEvent.click(screen.getByRole("button", { name: "commit" }));
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("b"));
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     expect(screen.getByTestId("draft").textContent).toBe('{"verdict":"pass"}');
@@ -402,7 +413,7 @@ describe("NavProvider target history", () => {
     });
     queue = [entry("a", 0), entry("b", 1)];
     traces = { a: trace("a"), b: trace("b") };
-    apiMock.getTrace.mockImplementation(async (id: string) => {
+    apiMock.getTrace.mockImplementation(async (_project: string, _task: string, id: string) => {
       if (id === "b") return pendingB;
       return structuredClone(traces[id]);
     });
@@ -411,11 +422,11 @@ describe("NavProvider target history", () => {
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));
     fireEvent.click(screen.getByRole("button", { name: "commit" }));
     await waitFor(() =>
-      expect((screen.getByRole("button", { name: "← Back" }) as HTMLButtonElement).disabled).toBe(
+      expect((screen.getByRole("button", { name: "↩ Prev" }) as HTMLButtonElement).disabled).toBe(
         false,
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "↩ Prev" }));
     resolveB?.(structuredClone(traces.b));
 
     await waitFor(() => expect(screen.getByTestId("trace-id").textContent).toBe("a"));

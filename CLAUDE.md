@@ -69,7 +69,9 @@ There is no Makefile/justfile, and **no frontend linter/formatter** — don't in
 - `frontend/` — React SPA source (`frontend/src/{components,api,state,lib,keyboard}`).
 - `tests/` — pytest (flat; helpers in `tests/helpers.py`; golden fixtures in `tests/golden/`).
 - `e2e/` — standalone Playwright package.
-- `docs/design/00`–`10` — the authoritative spec; start at `00-overview.md`.
+- `docs/design/00`–`10` — the authoritative spec; start at `00-overview.md`. `03-config.md`,
+  `04-cli.md`, `05-http-api.md`, and `06-frontend.md` are retired (superseded by the
+  workspace/project/task model — see `00-overview.md` and `docs/refactor-plan.md`).
 
 ## Critical rules (enforced, not suggestions)
 
@@ -85,8 +87,9 @@ There is no Makefile/justfile, and **no frontend linter/formatter** — don't in
   `src/tracelabel/errors.py`; `cli/app.py` `run()` maps them to process exit codes.
 - **Pydantic config uses `extra="forbid"`** — unknown/typo'd YAML keys are hard errors.
 - **Imported content is immutable** — stored byte-for-byte, never reformatted.
-- `frontend/src/api/types.ts` is a hand-synced copy of `docs/design/05-http-api.md §2`;
-  change it only to track that spec.
+- `frontend/src/api/types.ts` is a hand-synced copy of the backend's Pydantic models
+  (`src/tracelabel/api/models.py`) — the source of truth for the HTTP contract; change
+  it only to track that file.
 
 ## Testing conventions
 
@@ -95,7 +98,8 @@ There is no Makefile/justfile, and **no frontend linter/formatter** — don't in
   Tests construct services directly via constructor DI. mypy runs `strict` on `src/` only.
 - **Frontend:** vitest + `@testing-library/react`, co-located `*.test.tsx`. Mock the API
   module with `vi.mock("@/api/client", …)`. Test files are excluded from `typecheck`.
-- **e2e:** Playwright drives the production SPA against two real `tracelabel serve`
-  backends it spawns (ports 8399/8409); it does not start Vite.
+- **e2e:** Playwright drives the production SPA against three real `tracelabel` server
+  processes it spawns (ports 8399/8409/8419, each its own throwaway `--dir` workspace);
+  it does not start Vite.
 
 Before opening a PR: run both test suites and confirm the frontend builds.

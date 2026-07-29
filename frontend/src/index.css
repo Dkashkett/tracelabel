@@ -10,31 +10,31 @@
 
 @layer base {
   :root {
-    /* Warm-graphite surfaces (a few points shifted toward red/orange, not pure neutral) */
-    --bg: 21 18 17;
-    --surface: 30 26 25;
-    --surface-raised: 37 32 30;
-    --surface-inset: 17 15 14;
+    /* Material Theme UI — Darker surfaces (#212121 family) */
+    --bg: 33 33 33;
+    --surface: 42 42 42;
+    --surface-raised: 56 56 56;
+    --surface-inset: 23 23 23;
 
     /* Ink */
-    --ink: 240 235 231;
-    --ink-muted: 180 171 165;
-    --ink-faint: 128 119 113;
+    --ink: 238 255 255;
+    --ink-muted: 133 133 133;
+    --ink-faint: 92 92 92;
 
     /* Lines */
-    --line: 58 51 48;
-    --line-strong: 82 73 69;
+    --line: 51 51 51;
+    --line-strong: 63 63 63;
 
-    /* Clay accent */
-    --accent: 214 122 82;
-    --accent-strong: 231 143 101;
-    --accent-fg: 30 16 10;
-    --accent-glow: 214 122 82;
+    /* Material Theme blue accent */
+    --accent: 130 170 255;
+    --accent-strong: 163 191 255;
+    --accent-fg: 13 27 46;
+    --accent-glow: 130 170 255;
 
-    /* Semantics */
-    --pass: 52 199 130;
-    --fail: 244 94 94;
-    --warn: 232 168 74;
+    /* Semantics: Material Theme's signature green/pink/amber */
+    --pass: 195 232 141;
+    --fail: 255 83 112;
+    --warn: 255 203 107;
   }
 
   html,
@@ -50,5 +50,10 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: rgb(var(--accent));
   }
 }

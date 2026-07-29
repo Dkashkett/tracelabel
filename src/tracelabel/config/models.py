@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -103,10 +103,36 @@ class ResolvedTaskConfig:
     shuffle: bool
     annotator: str
     schema_hash: str
-    data_path: Path
     llm: LLMConfig | None
     suggest_instructions: str | None
     # Review mode: the annotator whose labels are being reviewed (None = normal labeling),
     # and the source-line key those labels are read from.
     review_of: str | None = None
     review_labels_from: str = "judge"
+
+
+@dataclass(frozen=True)
+class TaskSpec:
+    """What's needed to create or update a task row in the database.
+
+    Distinct from ``ResolvedTaskConfig``: a ``TaskSpec`` is the input to
+    ``TaskRepository.create()``/``update_schema()`` (built by the API routes from
+    ``TaskCreate``/``TaskPatch`` request bodies, see ``api/models.py``), while a
+    ``ResolvedTaskConfig`` is the output — it additionally carries the computed
+    ``schema_hash`` and is what ``LabelingService``, ``AnnotationValidator``,
+    ``SuggestionService`` and ``ExportService`` consume.
+    """
+
+    name: str
+    level: Level
+    fields: list[dict[str, Any]]
+    label_roles: list[str]
+    shuffle: bool
+    annotator: str
+    llm: LLMConfig | None = None
+    suggest_instructions: str | None = None
+    review_of: str | None = None
+    review_labels_from: str = "judge"
+    # {"type": "all"} | {"type": "source", "source_ids": list[int]} (legacy single
+    # {"type": "source", "source_id": int} still read) | {"type": "filter", ...}
+    queue_scope: dict[str, Any] = field(default_factory=lambda: {"type": "all"})

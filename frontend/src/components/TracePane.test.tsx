@@ -40,7 +40,7 @@ function renderPane({ annotation = false }: { annotation?: boolean } = {}) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <NavProvider>
+      <NavProvider project="p" task="t">
         <TracePane />
         {annotation && <AnnotationPane />}
       </NavProvider>
@@ -56,7 +56,9 @@ beforeEach(() => {
 
   apiMock.getSession.mockImplementation(async () => structuredClone(session));
   apiMock.getQueue.mockImplementation(async () => queue.map((item) => ({ ...item })));
-  apiMock.getTrace.mockImplementation(async (id: string) => structuredClone(traces[id]));
+  apiMock.getTrace.mockImplementation(
+    async (_project: string, _task: string, id: string) => structuredClone(traces[id]),
+  );
   apiMock.getProgress.mockImplementation(async () => ({
     unit: "traces",
     total: queue.length,

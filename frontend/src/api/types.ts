@@ -103,3 +103,237 @@ export interface Progress {
   labeled: number;
   skipped: number;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Everything below is new in the v2 API contract (docs/refactor-plan.md §3).
+// The five types above keep their current shapes untouched; only their
+// paths move (see the plan). Field-level shapes below are the frontend's
+// own hand-synced read of the contract table, since api/models.py (backend)
+// is written by a parallel packet in this same wave.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type Level = "turn" | "trace";
+export type FieldType = "single_select" | "multi_select" | "text";
+
+// A field definition as stored/edited by the rubric editor. Shape mirrors
+// config/models.py FieldDef.
+export interface FieldDef {
+  name: string;
+  label?: string | null;
+  type: FieldType;
+  options?: string[] | null;
+  required: boolean;
+  placeholder?: string | null;
+  help?: string | null;
+}
+
+export interface LLMSettings {
+  model: string;
+  temperature: number;
+  max_tokens: number;
+}
+
+// { type: "all" } labels everything; { type: "source" } scopes to a subset of the
+// project's imports (source_ids); { type: "filter" } is Phase 2 (data manager).
+export type QueueScope =
+  | { type: "all" }
+  | { type: "source"; source_ids: number[] }
+  | { type: "filter"; [key: string]: unknown };
+
+// ── GET/PATCH /api/settings ──
+export interface Settings {
+  annotator: string | null;
+  default_llm_model: string | null;
+  theme: "light" | "dark" | "system";
+}
+export interface SettingsPatch {
+  annotator?: string | null;
+  default_llm_model?: string | null;
+  theme?: "light" | "dark" | "system";
+}
+
+// ── /api/projects ──
+// Note: ProjectSummary has no `notes` field on the backend (api/models.py) — only
+// ProjectDetail does. A project list screen that wants to preview notes needs the
+// detail endpoint, not the summary.
+export interface ProjectSummary {
+  slug: string;
+  name: string;
+  created_at: string;
+  task_count: number;
+  source_count: number;
+}
+export interface ProjectCreate {
+  name: string;
+  notes?: string;
+}
+// Deliberately NOT `extends ProjectSummary` — the backend's ProjectDetail has its
+// own field list (notes instead of task_count/source_count; derive counts from
+// tasks.length/sources.length if a screen needs them).
+export interface ProjectDetail {
+  slug: string;
+  name: string;
+  created_at: string;
+  notes: string;
+  tasks: TaskSummary[];
+  sources: SourceOut[];
+}
+
+// ── GET /api/projects/{p}/sources ──
+export interface SourceOut {
+  id: number;
+  name: string;
+  path: string | null;
+  adapter: string;
+  imported_at: string;
+  trace_count: number;
+}
+
+// ── /api/projects/{p}/imports ──
+// `from` (not `from_`) is the wire key — mirrors api/models.py's `Field(alias="from")`.
+export interface ImportPreviewIn {
+  path?: string;
+  content?: string;
+  from?: string; // default "auto" server-side
+  as_documents?: boolean;
+  include_all_spans?: boolean;
+}
+export interface ImportPreview {
+  adapter: string;
+  trace_count: number | null;
+  traces: TraceDetail[];
+  errors: string[];
+  notes: string[];
+}
+export interface ImportIn {
+  path?: string;
+  content?: string;
+  name?: string; // display name for the resulting `sources` row
+  from?: string; // default "auto" server-side
+  on_conflict?: "fail" | "skip"; // default "fail" server-side
+  skip_invalid?: boolean;
+  as_documents?: boolean;
+  include_all_spans?: boolean;
+}
+
+// ── GET /api/jobs/{job_id}  (also the response of long-running POSTs) ──
+export interface JobRef {
+  job_id: string;
+}
+export interface JobStatus {
+  job_id: string;
+  state: "pending" | "running" | "done" | "error";
+  progress: number;
+  result: unknown;
+  error: string | null;
+}
+
+// ── /api/projects/{p}/tasks ──
+export interface TaskSummary {
+  name: string;
+  level: Level;
+  schema_hash: string;
+  compat_hash: string;
+  updated_at: string;
+  total: number;
+  addressed: number;
+  queue_scope: QueueScope;
+}
+export interface TaskCreate {
+  name: string;
+  level: Level;
+  fields?: FieldDef[] | null; // null -> server's DEFAULT_FIELDS
+  label_roles?: string[] | null;
+  shuffle?: boolean;
+  annotator?: string | null;
+  queue_scope?: QueueScope | null;
+}
+// Deliberately NOT `extends TaskSummary` — TaskDetail and TaskSummary diverge
+// (TaskSummary has total/addressed counts; TaskDetail has annotator/created_at/llm
+// split into three flat fields instead of a nested LLMSettings).
+export interface TaskDetail {
+  name: string;
+  level: Level;
+  fields: FieldDef[];
+  label_roles: string[];
+  shuffle: boolean;
+  annotator: string;
+  schema_hash: string;
+  compat_hash: string;
+  queue_scope: QueueScope;
+  llm_model: string | null;
+  llm_temperature: number | null;
+  llm_max_tokens: number | null;
+  suggest_instructions: string | null;
+  review_of: string | null;
+  review_labels_from: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface TaskPatch {
+  annotator?: string | null;
+  shuffle?: boolean | null;
+  queue_scope?: QueueScope | null;
+  llm_model?: string | null;
+  llm_temperature?: number | null;
+  llm_max_tokens?: number | null;
+  suggest_instructions?: string | null;
+  review_of?: string | null;
+  review_labels_from?: string | null;
+}
+
+// ── /api/projects/{p}/tasks/{t}/schema ──
+export interface SchemaOut {
+  fields: FieldDef[];
+  schema_hash: string;
+  compat_hash: string;
+}
+export interface SchemaPatch {
+  fields: FieldDef[];
+}
+export interface RetypedFieldOut {
+  name: string;
+  old_type: string;
+  new_type: string;
+}
+// 409 response when a PATCH would orphan existing annotations without ?confirm=true.
+export interface SchemaImpactOut {
+  removed_fields: string[];
+  retyped_fields: RetypedFieldOut[];
+  removed_options: Record<string, string[]>;
+  affected_annotations: number;
+  breaking: boolean;
+}
+
+// ── GET /api/projects/{p}/tasks/{t}/items  (Phase 2 data manager) ──
+export interface ItemSummary {
+  target_id: string;
+  trace_id: string;
+  status: "unlabeled" | "labeled" | "skipped";
+  values: Record<string, string | string[]> | null;
+  annotator: string | null;
+  has_suggestion: boolean;
+  source: string | null;
+}
+export interface ItemPage {
+  items: ItemSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// ── GET /api/projects/{p}/tasks/{t}/stats  (Phase 3 eval loop) ──
+export interface TaskStats {
+  total: number;
+  labeled: number;
+  skipped: number;
+  agreement: number | null;
+  confusion: Record<string, Record<string, number>>;
+}
+
+// ── POST /api/projects/{p}/tasks/{t}/suggestions  (Phase 3) ──
+export interface SuggestIn {
+  model: string;
+  limit?: number;
+  overwrite?: boolean;
+}

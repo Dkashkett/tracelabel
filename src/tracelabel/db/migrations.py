@@ -1,8 +1,10 @@
+import json
 import sqlite3
+from collections.abc import Callable
+from typing import Any, cast
 
+from tracelabel.config.resolver import compat_hash
 from tracelabel.errors import EnvError
-
-SCHEMA_VERSION = 2
 
 _DDL_002 = """
 CREATE TABLE traces (
@@ -84,22 +86,71 @@ CREATE TABLE suggestions (
 );
 """
 
+_DDL_003 = """
+CREATE TABLE sources (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    path        TEXT,
+    adapter     TEXT NOT NULL,
+    imported_at TEXT NOT NULL,
+    trace_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE trace_sources (
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    trace_id  TEXT    NOT NULL REFERENCES traces(id)  ON DELETE CASCADE,
+    PRIMARY KEY (source_id, trace_id)
+);
+CREATE INDEX idx_trace_sources_trace ON trace_sources(trace_id);
+
+ALTER TABLE tasks ADD COLUMN compat_hash          TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN queue_scope          TEXT NOT NULL DEFAULT '{"type":"all"}';
+ALTER TABLE tasks ADD COLUMN annotator            TEXT;
+ALTER TABLE tasks ADD COLUMN llm_model            TEXT;
+ALTER TABLE tasks ADD COLUMN llm_temperature      REAL;
+ALTER TABLE tasks ADD COLUMN llm_max_tokens       INTEGER;
+ALTER TABLE tasks ADD COLUMN suggest_instructions TEXT;
+ALTER TABLE tasks ADD COLUMN review_of            TEXT;
+ALTER TABLE tasks ADD COLUMN review_labels_from   TEXT NOT NULL DEFAULT 'judge';
+"""
+
+
+def _to_v2(connection: sqlite3.Connection) -> None:
+    connection.executescript(_DDL_002)
+
+
+def _to_v3(connection: sqlite3.Connection) -> None:
+    connection.executescript(_DDL_003)
+    # Backfill compat_hash from each existing task's already-stored resolved_schema.
+    # This is Python, not SQL, because compat_hash's field-name/type projection and
+    # canonical-JSON encoding live in config/resolver.py, not in SQLite.
+    rows = connection.execute("SELECT name, resolved_schema FROM tasks").fetchall()
+    for row in rows:
+        fields = cast(list[dict[str, Any]], json.loads(row["resolved_schema"]))
+        connection.execute(
+            "UPDATE tasks SET compat_hash=? WHERE name=?",
+            (compat_hash(fields), row["name"]),
+        )
+
+
+Migration = Callable[[sqlite3.Connection], None]
+SCHEMA_VERSION = 3
+MIGRATIONS: list[tuple[int, Migration]] = [(2, _to_v2), (3, _to_v3)]
+
 
 def upgrade(connection: sqlite3.Connection) -> None:
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-    if version == SCHEMA_VERSION:
-        return
-    if version == 0:
-        with connection:
-            connection.executescript(_DDL_002)
-            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        return
-    if version < SCHEMA_VERSION:
+    if 0 < version < MIGRATIONS[0][0]:
         raise EnvError(
             "This database was created by an older tracelabel. Start a new project "
             "directory and re-import your traces."
         )
-    raise EnvError(
-        f"Database schema v{version} is newer than this tracelabel ({SCHEMA_VERSION}). "
-        "Upgrade: pip install -U tracelabel"
-    )
+    if version > SCHEMA_VERSION:
+        raise EnvError(
+            f"Database schema v{version} is newer than this tracelabel "
+            f"({SCHEMA_VERSION}). Upgrade: pip install -U tracelabel"
+        )
+    for target, step in MIGRATIONS:
+        if version < target:
+            with connection:
+                step(connection)
+                connection.execute(f"PRAGMA user_version = {target}")

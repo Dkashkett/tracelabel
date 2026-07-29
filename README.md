@@ -1,484 +1,137 @@
 # tracelabel [![Release](https://github.com/Dkashkett/tracelabel/actions/workflows/release.yml/badge.svg)](https://github.com/Dkashkett/tracelabel/actions/workflows/release.yml)
 
-**Local-first, lightweight labeling — keyboard-fast, no accounts, no server.**
-
-One `pip install`. One command. Your browser opens on a keyboard-driven labeling UI over your
-own traces. No sign-up, no cloud, no Node, no database to stand up. It's a single Python wheel
-that bundles a FastAPI server, a prebuilt React app, and SQLite — one `.db` file per project.
+**Local-first, keyboard-fast labeling for LLM and agent traces.** One command opens a
+browser UI over your own traces. No accounts, no cloud, no database to stand up — a
+single Python wheel with SQLite behind it. Nothing leaves your machine.
 
 ```bash
-uvx tracelabel demo
+uvx tracelabel demo          # try it, no install
+pip install tracelabel       # then: tracelabel
 ```
 
-![demo](https://raw.githubusercontent.com/Dkashkett/tracelabel/main/docs/demo.gif)
+Python ≥ 3.10. Add `pip install "tracelabel[ai]"` for LLM-assisted prefill.
 
-Press `j` to jump to the first labelable turn, `1` to mark it **pass**, `Enter` to commit and
-advance. That's the whole loop.
+## The loop
 
-Multi-agent traces get real structure, not a flat message list: an outline navigator (`o`) for
-jumping between agents/tool calls/handoffs, collapsible tool-call cards with duration and error
-state, agent-colored sections, and handoff dividers — imported from OTEL GenAI spans, Google ADK
-sessions, or Datadog LLM-Observability spans (see [Data formats](#data-formats)).
+**1 · Make a project.** Projects hold your traces and your labeling passes over them.
 
-## Install
+![Projects](docs/screenshots/project-list.png)
+
+**2 · Import traces.** Drop a file, paste JSON, or point at a path. tracelabel detects
+the format and shows you what it found before anything is written.
+
+![Import](docs/screenshots/import.png)
+
+**3 · Make a task.** Name it, pick trace-level or turn-level, and build the rubric
+against a live preview of itself. Fields are single-select, multi-select, or text.
+
+![Rubric](docs/screenshots/new-task-rubric.png)
+
+**4 · Label.** Trace on the left, rubric on the right. `1`–`9` pick options, `r` jumps to
+the text field, `Enter` commits and advances, `s` skips, `?` shows every shortcut.
+
+![Labeling](docs/screenshots/label-view.png)
+
+**5 · Get labels out.**
 
 ```bash
-pip install tracelabel          # from PyPI
-uvx tracelabel demo             # run without installing (via uv)
-python -m tracelabel serve …    # module entry point
+tracelabel export --project my-project --task my-task --joined
 ```
 
-Requires **Python ≥ 3.10**; runs on macOS, Linux, and Windows. LLM-assisted prefill
-(`tracelabel suggest`) needs the optional extra:
+One JSONL row per annotation, with `values` nested. `--joined` includes the source
+content so you never join back to the original file. See [`docs/pandas.md`](docs/pandas.md)
+for loading it.
+
+## Other ways in
 
 ```bash
-pip install "tracelabel[ai]"
+tracelabel traces.jsonl                                # import + start labeling, one step
+tracelabel import dump.jsonl --project p --from adk    # scripts and CI
+tracelabel --dir .                                     # keep labels next to your traces
 ```
 
-## Quickstart
-
-```bash
-pip install tracelabel
-tracelabel serve traces.jsonl     # imports the file + opens http://127.0.0.1:8377
-tracelabel export                 # → <task>-annotations.jsonl
-```
-
-Your traces are a UTF-8 JSONL file, one trace per line — see [Data formats](#data-formats). **No
-config needed**: tracelabel defaults to a turn-level pass/fail task, so you can point it at a
-file and start labeling. The file you serve *is* the queue — `tracelabel serve week-28.jsonl`
-labels only week 28's traces (see [One db, many files](#one-db-many-files)).
+Everything lives in `~/.tracelabel/` unless you pass `--dir`.
 
 ## Data formats
 
-Everything you import is normalized to one internal shape — **the tracelabel trace format** (full
-spec: [`docs/trace-format.md`](docs/trace-format.md)). You rarely need to produce it by hand:
-`--from auto` (the default) sniffs the first few lines and routes your data through the right
-adapter, in priority order:
+`--from auto` (the default) sniffs your file and picks an adapter:
+`ctf → otel → adk → datadog → documents → loose`. Force one with
+`--from ctf|otel|adk|datadog|documents`.
 
-```
-ctf  →  otel  →  adk  →  datadog  →  documents  →  loose
-```
-
-Force a specific one with `--from ctf|otel|adk|datadog|documents`. Input can be a `.jsonl` file
-(one JSON value per line), a single JSON object, a top-level JSON array, or — for documents — a
-folder.
-
-### Native traces (JSONL)
-
-One trace per line: an object with an optional `id` and a required `messages` array. This is the
-tracelabel trace format itself — what every other adapter converts *into*. Roles are
-`system | user | assistant | tool`, plus `event` for non-conversational structure (agent
-handoffs, retrieval spans, guardrail checks — never labelable; see
-[`docs/trace-format.md`](docs/trace-format.md) §3.1). Assistant turns may carry `tool_calls`;
-`tool` turns carry a `tool_call_id`:
+**Native traces** — one per line, an optional `id` and a required `messages` array.
+Everything else converts into this. Full spec: [`docs/trace-format.md`](docs/trace-format.md).
 
 ```json
-{"id": "demo_001", "metadata": {"model": "gpt-4o", "env": "prod"}, "messages": [
-  {"role": "system", "content": "You are Aria, a support agent."},
-  {"role": "user", "content": "Status of order #48213?"},
-  {"role": "assistant", "content": "", "tool_calls": [
-    {"id": "call_1", "type": "function",
-     "function": {"name": "lookup_order", "arguments": "{\"order_id\": \"48213\"}"}}]},
-  {"role": "tool", "tool_call_id": "call_1", "name": "lookup_order",
-   "content": "{\"status\": \"shipped\", \"carrier\": \"UPS\"}"},
-  {"role": "assistant", "content": "Order #48213 has shipped via UPS."}
-]}
+{"id":"conv_1","messages":[
+  {"role":"user","content":"What's AAPL trading at?"},
+  {"role":"assistant","content":"","tool_calls":[
+    {"id":"c1","type":"function","function":{"name":"quote","arguments":"{\"ticker\":\"AAPL\"}"}}]},
+  {"role":"tool","tool_call_id":"c1","name":"quote","content":"{\"price\": 212.4}"},
+  {"role":"assistant","content":"AAPL is trading at $212.40."}]}
 ```
 
-`content` may be a plain string or a **parts array** — `{"type": "text"|"json"|"html", …}` —
-for mixed text/JSON/HTML turns. A handful of validation rules apply (`tool_calls` only on
-`assistant`, `tool_call_id` only on `tool`, empty content allowed only with `tool_calls`); the
-importer rejects violations with a fixed example. Full rules: [`docs/trace-format.md`](docs/trace-format.md).
-
-### Loose inputs (almost-native)
-
-Most people arrive with data that's *nearly* the native format. The `loose` adapter accepts common shapes and
-prints a one-line summary of what it remapped (e.g. `interpreted "turns" as "messages" on 412 lines`):
-
-| You have | tracelabel does |
-|---|---|
-| A bare OpenAI messages array per line: `[{"role": "user", …}, …]` | Wraps it as `{"messages": […]}` |
-| `{"conversation": […]}` / `{"turns": […]}` / `{"chat": […]}` | Renames the key to `messages` |
-| Messages using `speaker` / `from` instead of `role` | Renames; maps `human→user`, `ai`/`bot`/`agent→assistant` |
-| LangSmith-style runs with `inputs.messages` / `outputs` | Best-effort maps to messages; extras → `raw` |
-
-### Documents mode
-
-Label freeform text/Markdown/HTML/JSON (notes, transcripts, policy pages) instead of agent
-conversations. Documents label at the **trace level** (there's nothing to break into turns), and
-Markdown/HTML render with real formatting in the UI. Two ways in:
-
-**A JSONL of documents** — each line is a bare string, or an object with a required `content`:
+**Loose** — anything close to native. Renames `conversation`/`turns`/`chat` to
+`messages`, `speaker`/`from` to `role`, maps `human→user` and `ai`/`bot`/`agent→assistant`.
 
 ```jsonl
-"A plain document is just a string."
-{"content": "# Report\n\nFindings go here.", "content_type": "markdown", "id": "report-1"}
+{"conversation":[{"role":"user","content":"hi"},{"role":"assistant","content":"yo"}]}
+{"turns":[{"speaker":"human","content":"bye"},{"speaker":"ai","content":"later"}]}
 ```
 
-A bare string defaults to `content_type: "text"`. `--as-documents` forces this adapter on JSONL
-input even if auto-detection would pick something else.
+**Documents** — label freeform text/Markdown/HTML instead of conversations. A bare
+string, or an object with `content`. Pointing at a folder imports one document per file.
 
-**A folder of files** — a non-recursive scan; one document per file:
-
-```bash
-tracelabel serve ./docs     # every .md / .markdown / .txt / .text / .html / .htm file
+```jsonl
+"bare string doc"
+{"content": "# Title\n\nBody.", "id": "readme", "content_type": "markdown"}
 ```
 
-The `id` is the filename, the extension sets `content_type`, and the real path is stored in
-`metadata.path`. Other file types (`.json`, `.jsonl`, hidden files, unknown extensions) are
-skipped with a summary note.
-
-### OTEL GenAI spans
-
-An **OpenTelemetry trace export** — either a full OTLP/JSON envelope (`resourceSpans →
-scopeSpans → spans`) or a bare list of spans — following the (pre-stable) [GenAI semantic
-conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). This is the most
-framework-agnostic path in: anything that exports OTel GenAI spans (a growing set of agent SDKs
-and frameworks) gets tool-call, agent-handoff, and retrieval structure without a
-framework-specific adapter. Spans are grouped by trace id and ordered depth-first by the span
-tree; `chat`/`generate_content` spans become turns, `execute_tool` spans become `tool_calls` +
-`tool` turns (with duration/error status), and `invoke_agent` spans mark agent boundaries whose
-name propagates onto every descendant row. See [Exporting from OTEL](#exporting-from-otel).
-
-### ADK sessions
-
-An exported **Google ADK session envelope** — `{"events": […], "appName"?, "userId"?, "id"?}` —
-maps to one trace. Each event's `author` becomes a `user` or `assistant` turn tagged with that
-agent (agent-colored section headers + chips in the UI, so multi-agent sessions stay legible),
-`function_call` / `function_response` parts become `tool_calls` + `tool` turns, and a
-`transfer_to_agent` call becomes a handoff divider between agent sections. See [Exporting from
-ADK](#exporting-from-adk) for how to produce this file.
-
-### Datadog LLM-Observability spans
-
-An exported **JSON/JSONL of Datadog LLM-Observability spans** — each span carrying `trace_id`,
-`span_id`, `start_ns`, `duration`, and a `meta` object with a `kind`. Spans are grouped by
-`trace_id` and ordered by `start_ns` into one trace each: `llm` spans' input/output messages
-become turns, `tool` spans become `tool_calls` + `tool` turns (duration/error status attached),
-and `workflow`/`agent` spans mark agent boundaries. See
-[Exporting from Datadog](#exporting-from-datadog) for how to produce this file. (File import
-only — there is no live Datadog API sync.)
-
-Spans that aren't chat/tool/agent (raw `http`, `db.client`, etc.) are folded into trace metadata
-by default on both the OTEL and Datadog adapters; pass `--include-all-spans` to keep them as
-visible (never-labelable) event rows instead.
-
-## Commands
-
-| Command | What it does | When to reach for it |
-|---|---|---|
-| `serve [file\|dir]` | **Import + create/open a task + build the labeling queue + open the browser UI.** The interactive entry point. | Normal labeling. Point it at your data and go. |
-| `import <file\|dir>` | **Load data into the db only** — no task, no queue, no server. | Bulk ingest, or when you need format knobs `serve` doesn't expose. Follow with `serve --all`. |
-| `export` | Read the db and write annotations to JSONL/CSV. Pure read — no server needed. | Get labels out for analysis. |
-| `suggest [file]` | Optional LLM prefill of label suggestions (needs `[ai]` extra). | Warm-start labeling with a model's guesses. |
-| `demo` | Copy bundled sample traces to a temp dir and serve them. | Try tracelabel with zero setup. |
-| `tasks list` | Print a progress table across the whole db. | Check how far along each task is. |
-
-**`import` vs `serve`** — both ingest through the same importer, but:
-
-- **`import`** loads data and exits. It exposes the full ingest surface: `--from
-  auto|ctf|otel|adk|datadog|documents`, `--on-conflict fail|skip`, `--skip-invalid` (skip malformed
-  lines instead of failing), `--as-documents`, `--include-all-spans` (keep non-chat/tool/agent
-  spans as visible event rows instead of folding them into metadata; OTEL and Datadog adapters
-  only). It does **not** create a task or start a server.
-- **`serve`** loads data *and* opens/creates a task, builds the labeling queue, and starts the
-  web UI. It fixes `on-conflict=fail` and doesn't expose `--from`/`--skip-invalid` — so when your
-  data isn't already in the native format, `import` it first, then `serve --all` to label everything in the db.
-
-Useful `serve` flags: `--task NAME`, `--level turn|trace`, `--all` (label the whole db, not just
-the file you served), `--include-all-spans`, `--review-of NAME` / `--labels-from KEY` (review an
-LLM judge's existing labels — see [Reviewing an LLM judge's labels](#reviewing-an-llm-judges-labels)),
-`--port` (default `8377`), `--no-browser`, `--shuffle/--no-shuffle`. The server binds `127.0.0.1` only.
-
-## Common workflows
-
-**1 · Just try it**
-
-```bash
-tracelabel demo
-```
-
-**2 · Label your own traces**
-
-```bash
-tracelabel serve traces.jsonl     # label in the browser
-tracelabel export                 # → traces-annotations.jsonl (or <task>-annotations.jsonl)
-```
-
-**3 · Ingest a messy/odd format first, then label all of it**
-
-```bash
-tracelabel import dump.jsonl --from adk --skip-invalid
-tracelabel serve --all            # queue = every trace in the db
-```
-
-**4 · Scoped weekly queues over one shared db**
-
-```bash
-tracelabel serve week-28.jsonl --task empathy   # only week 28; resumes where you left off
-```
-
-**5 · LLM-assisted prefill, then review**
-
-```bash
-pip install "tracelabel[ai]"
-export OPENAI_API_KEY=…           # or your provider's key
-tracelabel suggest traces.jsonl   # writes suggestions; you still confirm each label
-tracelabel serve traces.jsonl
-```
-
-**6 · Check progress and export for analysis**
-
-```bash
-tracelabel tasks list
-tracelabel export --joined --status labeled --out labels.jsonl
-```
-
-## Exported data
-
-`tracelabel export` is a pure db read with a **stable column contract** — the columns are an API.
-Default format is JSONL (one row per annotation), with the label `values` nested as an object;
-CSV flattens them into `value.<field>` columns.
-
-Base columns (always present):
-
-```
-task  trace_id  target_type  target_id  turn_index  annotator
-status  prefill_model  schema_hash  created_at  updated_at
-```
-
-A default **JSONL row**:
+**OTEL GenAI spans** — an OTLP/JSON export following the
+[GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/),
+grouped by `traceId`. `chat` spans become turns, `execute_tool` becomes tool calls,
+`invoke_agent` marks agent boundaries.
 
 ```json
-{"task": "empathy", "trace_id": "conv_1", "target_type": "turn", "target_id": "conv_1#4",
- "turn_index": 4, "annotator": "me", "status": "labeled", "prefill_model": null,
- "schema_hash": "a1b2c3…", "created_at": "2026-07-12T15:04:05Z", "updated_at": "2026-07-12T15:04:05Z",
- "values": {"verdict": "pass", "failure_modes": ["formatting"], "notes": "minor wording nit"}}
+{"resourceSpans":[{"scopeSpans":[{"spans":[
+  {"traceId":"11111111111111111111111111111111","spanId":"bbbbbbbbbbbbbbbb",
+   "startTimeUnixNano":"1700000000100000000","endTimeUnixNano":"1700000001100000000",
+   "attributes":[
+     {"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},
+     {"key":"gen_ai.input.messages","value":{"stringValue":"[{\"role\":\"user\",\"content\":\"Weather in Boston?\"}]"}},
+     {"key":"gen_ai.output.messages","value":{"stringValue":"[{\"role\":\"assistant\",\"content\":\"Let me check.\"}]"}}]}
+]}]}]}
 ```
 
-`--joined` folds in the source content so you never join back to the original file: turn-level
-rows gain `role`, `content`, `content_type`, `trace_metadata`, `source`; trace-level rows gain
-the reconstructed `messages` array (or `content`/`content_type` for document traces). Other flags:
-`--task`, `--format jsonl|csv`, `--status labeled|skipped|all`, `--out PATH` (`-` = stdout).
+**ADK sessions** — a Google ADK session envelope, one trace per session. Each event's
+`author` tags the turn; `transfer_to_agent` becomes a handoff divider.
 
-Load it in three lines:
-
-```python
-import pandas as pd
-df = pd.read_json("empathy-annotations.jsonl", lines=True)
-df.groupby("task")["values"].apply(lambda v: (pd.json_normalize(v)["verdict"] == "pass").mean())
+```json
+{"id":"sess_1","appName":"demo","events":[
+  {"author":"user","timestamp":1700000000,
+   "content":{"parts":[{"text":"What's the weather in Paris?"}]}},
+  {"author":"planner","timestamp":1700000001,
+   "content":{"parts":[{"function_call":{"id":"c1","name":"get_weather","args":{"city":"Paris"}}}]}},
+  {"author":"planner","timestamp":1700000002,
+   "content":{"parts":[{"function_response":{"id":"c1","name":"get_weather","response":{"temp_c":18}}}]}}]}
 ```
 
-See [`docs/pandas.md`](docs/pandas.md) for a groupby recipe per field type (`single_select`,
-`multi_select`, `text`).
-
-## Exporting from OTEL
-
-The `otel` adapter wants an OTLP/JSON trace export with [GenAI semantic-convention
-attributes](https://opentelemetry.io/docs/specs/semconv/gen-ai/) — an OTel collector's
-[file exporter](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/fileexporter)
-pointed at your agent process is the usual path, or your SDK's own OTLP/JSON writer. One trace
-export (a `resourceSpans` envelope, or a bare list of spans) can contain many traces —
-`tracelabel` groups spans by `traceId` for you:
-
-```yaml
-# OTel collector config.yaml — write spans to a file instead of (or alongside) a real backend
-exporters:
-  file:
-    path: otel-spans.json
-service:
-  pipelines:
-    traces:
-      exporters: [file]
-```
-
-```bash
-tracelabel serve otel-spans.json        # or: tracelabel import … --from otel
-```
-
-The adapter recognizes `gen_ai.operation.name` in `chat`/`generate_content`/`text_completion`
-(conversation turns, from `gen_ai.input.messages`/`gen_ai.output.messages` attributes or the
-older span-event style), `execute_tool` (tool calls + results), `invoke_agent` (agent
-boundaries, named by `gen_ai.agent.name`), and retrieval/embedding spans. Everything else is
-kept in `raw` unless you pass `--include-all-spans`.
-
-## Exporting from ADK
-
-The `adk` adapter wants the **session envelope JSON**. ADK `Session`/`Event` objects are Pydantic
-models, so you serialize them with `model_dump()` / `model_dump_json()`. Illustrative helper
-(one session per line — adapt to your session service and ids):
-
-```python
-# pip install google-adk
-import json
-
-session = await session_service.get_session(app_name=APP, user_id=UID, session_id=SID)
-with open("adk-sessions.jsonl", "w") as f:
-    f.write(json.dumps(session.model_dump(mode="json")) + "\n")
-```
-
-Then:
-
-```bash
-tracelabel serve adk-sessions.jsonl        # or: tracelabel import … --from adk
-```
-
-The adapter needs, per session: `events[].author`, and `events[].content.parts[]` where a part is
-`{"text": …}`, `{"function_call": {"name", "args", "id"?}}`, or
-`{"function_response": {"name", "response", "id"?}}`. Top-level `appName` / `userId` / `id` are
-optional and land in trace metadata. Because each event's `author` becomes the assistant `name`,
-multi-agent sessions render with a per-agent chip.
-
-## Exporting from Datadog
-
-The `datadog` adapter wants an **exported JSON/JSONL of LLM-Observability spans** (file import
-only — no live sync). Pull them from Datadog's Export API and write each span as one JSONL line.
-Illustrative helper:
-
-```bash
-curl -s \
-  -H "DD-API-KEY: $DD_API_KEY" -H "DD-APPLICATION-KEY: $DD_APP_KEY" \
-  "https://api.datadoghq.com/api/v2/llm-obs/v1/spans/events?filter[from]=now-1d&filter[to]=now" \
-  | jq -c '.data[].attributes' > datadog-spans.jsonl
-
-tracelabel import datadog-spans.jsonl --from datadog
-```
-
-The adapter needs, per span: `trace_id`, `span_id`, `start_ns`, `duration`, and a `meta` object
-with a `kind` (`llm` / `tool` / `workflow`); LLM spans carry `meta.input.messages` /
-`meta.output.messages`. Spans are grouped by `trace_id` into one trace each.
-
-> Adjust the host for your Datadog site (e.g. `api.datadoghq.eu`), and the `.data[].attributes`
-> jq path if your export nests fields differently — the requirement is only that each output line
-> is a span object with the fields above.
-
-## Configuring the task
-
-Drop a `config.yaml` next to your data (or pass `--config`). Everything not specified falls back
-to sensible defaults; unknown keys are hard errors with a pointed message.
-
-```yaml
-name: empathy
-level: turn                 # label per-turn (default) or per-trace
-label_roles: [assistant]    # which roles are labelable
-fields:
-  - name: verdict
-    type: single_select
-    options: [pass, fail]
-    required: true
-  - name: failure_modes
-    type: multi_select
-    options: [hallucination, refused, wrong_tool, formatting]
-  - name: notes
-    type: text
-```
-
-Field types map one-to-one to UI controls and to export columns. Add a field, get a new keyboard
-target and a new column — no redesign. With a `config.yaml` present you can run `tracelabel serve`
-(no file argument) and it uses the `data:` path from the config.
-
-## Reviewing an LLM judge's labels
-
-When a model has already judged your traces — a `pass`/`fail` verdict plus reasoning per trace —
-review mode lets a human sweep those predictions and **approve or correct** each one, keyboard-fast.
-It's `serve` inverted: instead of stepping through *unlabeled* targets, it steps through the
-targets the judge already labeled, seeding the form from the judge's verdict so `Enter` **approves**
-it as-is, `1`/`2` **flip** the verdict, and `r` edits the reasoning.
-
-Put each judge label on its trace line under a `judge` key (a values dict keyed by your schema
-fields), and give every labeled line an `id` so the label can be matched to its trace:
+**Datadog LLM-Obs spans** — an exported JSON/JSONL, grouped by `trace_id`. File import
+only, no live sync.
 
 ```jsonl
-{"id": "t1", "messages": [...], "judge": {"verdict": "pass", "reasoning": "answered correctly"}}
-{"id": "t2", "messages": [...], "judge": {"verdict": "pass", "reasoning": "looks fine"}}
+{"trace_id":"ta","span_id":"s1","start_ns":100,"duration":5,"meta":{"kind":"llm","input":{"messages":[{"role":"user","content":"Hi"}]},"output":{"messages":[{"role":"assistant","content":"Hello!"}]}}}
+{"trace_id":"ta","span_id":"s2","start_ns":200,"duration":3,"parent_id":"s1","meta":{"kind":"tool","name":"search","input":{"value":"weather"},"output":{"value":"sunny"}}}
 ```
 
-```bash
-tracelabel serve traces.jsonl --review-of gpt-4o   # opens on the first judge label to review
-tracelabel export --joined                          # judge + your labels, one row each
-```
+[`docs/importing.md`](docs/importing.md) covers how to produce the OTEL, ADK, and Datadog
+files from the systems you're already running.
 
-The judge is stored as its **own annotator** (here `gpt-4o`), and your corrections as a second
-annotator — so the original prediction is **preserved**, and export emits one row per annotator per
-trace. Diff them to measure how often the judge was right:
+## Privacy
 
-```python
-import pandas as pd
-df = pd.read_json("traces-2026-07-12-annotations.jsonl", lines=True)
-v = df.assign(verdict=df["values"].str["verdict"]).pivot(
-    index="trace_id", columns="annotator", values="verdict")
-agree = (v["gpt-4o"] == v["me"]).mean()   # judge accuracy vs. your review
-```
-
-Review mode is **trace-level** (the `pass_fail` default) and single judge per run. Flags:
-`--review-of NAME` (the judge's annotator name; turns review mode on), `--labels-from KEY`
-(the source-line key; default `judge`), and `--annotator NAME` for your own name (must differ from
-the judge). You can also set these under a `review:` block in `config.yaml`
-(`review: {of: gpt-4o, labels_from: judge}`).
-
-## One db, many files
-
-tracelabel stores one shared pool of traces per project (`.tracelabel/tracelabel.db`) — traces
-are deduped by id/content hash and accumulate across every file you've ever served or imported.
-But the *file you serve is a lens over that pool*, not the pool itself: `tracelabel serve
-week-28.jsonl --task empathy` scopes the labeling queue and progress bar to exactly the traces in
-`week-28.jsonl`, even if the db already contains traces from `week-27.jsonl` or other tasks.
-Re-serving an old file resumes exactly where you left off — nothing is re-scrambled or
-un-completed by importing something new.
-
-- Each file is imported idempotently, so re-serving the same file (or one with overlapping
-  traces) is always safe.
-- `tracelabel export` and `tracelabel tasks list` are **db-wide** — they report on the whole pool,
-  across every file and session, not just the last one served.
-- `tracelabel serve <file> --all` opts back into whole-db behavior: it still imports `<file>`
-  (idempotent, as always), but the queue is every trace in the db, not just that file's.
-
-## Privacy & security
-
-**Your traces never leave your machine unless _you_ run `suggest`.**
-
-- **Loopback only.** The server binds `127.0.0.1`; there is no `--host` flag and no auth, because
-  nothing is ever exposed off your loopback interface.
-- **No telemetry, ever** — not opt-in, not opt-out. The *only* outbound network call this package
-  can make is a model call you explicitly trigger with `tracelabel suggest`, using your own API
-  key from your own environment.
-- **API keys from env only.** Putting an `api_key:` in your config is a hard error; keys are never
-  logged and never written to the database.
-- **Untrusted HTML is sandboxed.** HTML traces render in an iframe with an empty `sandbox`
-  attribute; there is no `dangerouslySetInnerHTML` anywhere in the app.
-- **Strict config.** Unknown/typo'd config keys are hard errors.
-- **Tiny dependency surface.** Runtime core is `fastapi`, `uvicorn`, `pydantic`, `typer`,
-  `pyyaml`; `litellm` is an optional `[ai]` extra; shadcn/ui is vendored, not a dependency.
-
-## When to use something else
-
-tracelabel is deliberately small. Reach for a full platform when you need what it doesn't do:
-
-- **[Label Studio](https://labelstud.io/) / [Argilla](https://argilla.io/)** — hosted
-  multi-annotator platforms with accounts, projects, review workflows, and rich media (images,
-  audio, bounding boxes). tracelabel is single-player, text/JSON/HTML/Markdown only, and runs on
-  your laptop.
-- Use tracelabel when you want to label agent traces *right now*, keyboard-fast, without standing
-  up infrastructure or sending your data anywhere.
-
-## Teams
-
-tracelabel is single-player today — one annotator, one db file. But the schema is already
-multi-annotator ready (every annotation carries an `annotator` and a `schema_hash`), so teams
-aren't a dead end. The planned answer is:
-
-```bash
-tracelabel merge alice.db bob.db      # (planned) combine independent annotators' db files
-```
-
-Each person labels locally into their own `.db`; you merge and compute agreement offline. Nothing
-about the storage format needs to change to get there.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, frontend build behavior, and test
-commands.
+The server binds `127.0.0.1` only — no `--host` flag, no auth, because nothing is exposed
+off loopback. No telemetry, ever. The only outbound call is a model call you explicitly
+trigger with `tracelabel suggest`, using your own key from your own environment.
 
 ## License
 
-[Apache-2.0](LICENSE).
+[Apache-2.0](LICENSE). Development setup in [CONTRIBUTING.md](CONTRIBUTING.md).
