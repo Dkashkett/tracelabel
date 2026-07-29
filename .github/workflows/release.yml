@@ -57,8 +57,13 @@ jobs:
           /tmp/clean/bin/python -m tracelabel --help
 
       # E2E-01 against the *installed* wheel — the SPA it serves is the one shipped in the wheel.
+      # PLAYWRIGHT_TRACELABEL_CMD bypasses playwright.config.ts's default `uv run tracelabel`
+      # (which would run the source checkout, not this wheel) in favor of the bare `tracelabel`
+      # the PATH override below resolves to /tmp/clean/bin.
       - name: Playwright smoke on the wheel
         working-directory: e2e
+        env:
+          PLAYWRIGHT_TRACELABEL_CMD: tracelabel
         run: |
           npm ci
           npx playwright install --with-deps chromium

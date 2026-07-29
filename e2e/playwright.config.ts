@@ -28,7 +28,12 @@ const BROWSER_WORKSPACE_DIR = path.join(
 // `uv sync` is per-project). `env -u VIRTUAL_ENV` guards against a stray VIRTUAL_ENV
 // left over from another shell/venv pointing `uv run` at the wrong environment
 // entirely, which reads as "stale code" and is easy to misdiagnose.
-const TRACELABEL = "env -u VIRTUAL_ENV uv run tracelabel";
+//
+// The release workflow is the one deliberate exception: it needs to exercise the
+// *installed wheel* in a throwaway venv, not the source checkout, so it points PATH
+// at that venv and sets PLAYWRIGHT_TRACELABEL_CMD=tracelabel to bypass `uv run`
+// entirely (see release.yml's "Playwright smoke on the wheel" step).
+const TRACELABEL = process.env.PLAYWRIGHT_TRACELABEL_CMD ?? "env -u VIRTUAL_ENV uv run tracelabel";
 
 // Spawn real `tracelabel` server processes and wait until each is browser-ready.
 // `/api/settings` is the health check (it always answers once the process is up, no

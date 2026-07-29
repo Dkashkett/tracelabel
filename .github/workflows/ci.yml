@@ -59,6 +59,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - uses: astral-sh/setup-uv@v3
       - name: Build SPA into the package
         run: |
           npm ci --prefix frontend
@@ -66,7 +67,7 @@ jobs:
       - name: check-static (PKG-01)
         run: test -f src/tracelabel/static/index.html
       - name: Install package
-        run: pip install -e .
+        run: uv sync --extra dev
       - name: Run Playwright smoke
         working-directory: e2e
         run: |
