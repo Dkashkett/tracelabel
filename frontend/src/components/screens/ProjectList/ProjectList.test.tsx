@@ -46,11 +46,15 @@ describe("ProjectList", () => {
     expect(screen.getByText("1 task")).toBeTruthy();
   });
 
-  it("shows a friendly empty state when there are no projects", async () => {
+  it("shows the first-run welcome when there are no projects", async () => {
     apiMock.listProjects.mockResolvedValue([]);
     renderScreen();
 
-    expect(await screen.findByText("No projects yet")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Turn your traces into golden data." }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create your first project" })).toBeTruthy();
+    expect(screen.getByText("Your data stays on this machine")).toBeTruthy();
   });
 
   it("creates a project via the dialog and closes it", async () => {
@@ -65,8 +69,7 @@ describe("ProjectList", () => {
     apiMock.createProject.mockResolvedValue(created);
     renderScreen();
 
-    await screen.findByText("No projects yet");
-    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create your first project" }));
 
     expect(screen.getByRole("dialog", { name: "New project" })).toBeTruthy();
 

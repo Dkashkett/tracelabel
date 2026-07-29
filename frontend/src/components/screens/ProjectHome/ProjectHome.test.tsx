@@ -60,6 +60,7 @@ function renderAt(path: string) {
         <Routes>
           <Route path="/p/:project" element={<ProjectHome />} />
           <Route path="/p/:project/t/:task/label" element={<div>label view</div>} />
+          <Route path="/p/:project/t/:task/export" element={<div>export wizard</div>} />
           <Route path="/p/:project/tasks/new" element={<div>new task wizard</div>} />
         </Routes>
       </MemoryRouter>
@@ -103,5 +104,15 @@ describe("ProjectHome", () => {
     fireEvent.click(screen.getByRole("link", { name: "escalation-risk" }));
 
     expect(await screen.findByText("label view")).toBeTruthy();
+  });
+
+  it("opens the export wizard from a task action", async () => {
+    apiMock.projectsApi.getProject.mockResolvedValue(project);
+    renderAt("/p/support-triage");
+
+    await screen.findByText("Support Triage");
+    fireEvent.click(screen.getByRole("link", { name: "Export" }));
+
+    expect(await screen.findByText("export wizard")).toBeTruthy();
   });
 });

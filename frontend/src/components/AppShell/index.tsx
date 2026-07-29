@@ -15,16 +15,19 @@ export function AppShell() {
         </Link>
         {project && (
           <>
-            <span className="text-ink-faint">/</span>
-            <Link to={`/p/${project}`} className="text-ink-muted hover:text-ink">
+            <span className="hidden text-ink-faint sm:inline">/</span>
+            <Link
+              to={`/p/${project}`}
+              className="hidden whitespace-nowrap text-ink-muted hover:text-ink sm:inline"
+            >
               {project}
             </Link>
           </>
         )}
         {task && (
           <>
-            <span className="text-ink-faint">/</span>
-            <span className="text-ink-muted">{task}</span>
+            <span className="hidden text-ink-faint sm:inline">/</span>
+            <span className="hidden whitespace-nowrap text-ink-muted sm:inline">{task}</span>
           </>
         )}
         <div className="flex-1" />

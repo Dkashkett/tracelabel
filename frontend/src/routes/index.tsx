@@ -1,6 +1,7 @@
 import { createBrowserRouter, type RouteObject } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import DataManager from "@/components/screens/DataManager";
+import ExportWizard from "@/components/screens/ExportWizard";
 import ImportWizard from "@/components/screens/ImportWizard";
 import LabelView from "@/components/screens/LabelView";
 import NewTask from "@/components/screens/NewTask";
@@ -30,6 +31,7 @@ export const routes: RouteObject[] = [
       { path: "/p/:project/t/:task/schema", element: <RubricEditor /> },
       { path: "/p/:project/t/:task/items", element: <DataManager /> },
       { path: "/p/:project/t/:task/results", element: <Results /> },
+      { path: "/p/:project/t/:task/export", element: <ExportWizard /> },
       { path: "/settings", element: <Settings /> },
     ],
   },

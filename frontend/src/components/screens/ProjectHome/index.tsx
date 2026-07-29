@@ -59,13 +59,19 @@ export default function ProjectHome() {
                       {new Date(task.updated_at).toLocaleDateString()}
                     </p>
                   </Link>
-                  <div className="absolute right-4 top-4 flex items-center gap-2">
+                  <div className="absolute right-4 top-4 flex items-center gap-3">
                     <Badge variant="outline">{task.level}</Badge>
                     <Link
                       to={`/p/${slug}/t/${task.name}/schema`}
                       className="text-xs text-ink-muted hover:text-ink"
                     >
                       Rubric
+                    </Link>
+                    <Link
+                      to={`/p/${slug}/t/${task.name}/export`}
+                      className="text-xs text-ink-muted hover:text-ink"
+                    >
+                      Export
                     </Link>
                   </div>
                 </li>

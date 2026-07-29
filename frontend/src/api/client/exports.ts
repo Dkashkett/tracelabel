@@ -31,5 +31,6 @@ export const httpExportsApi: ExportsApi = {
 };
 
 export const mockExportsApi: ExportsApi = {
-  exportTask: async (projectSlug, taskName) => exportTask(projectSlug, taskName),
+  exportTask: async (projectSlug, taskName, query = {}) =>
+    exportTask(projectSlug, taskName, query),
 };

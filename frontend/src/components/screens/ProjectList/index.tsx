@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useCreateProject, useDeleteProject, useProjects } from "@/api/queries/projects";
+import { FirstRunWelcome } from "./FirstRunWelcome";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectCard } from "./ProjectCard";
 
@@ -31,27 +32,28 @@ export default function ProjectList() {
     deleteProject.mutate(slug);
   }
 
+  const isFirstRun = !isLoading && projects?.length === 0;
+
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-ink">Projects</h1>
-        <Button onClick={() => setDialogOpen(true)}>New project</Button>
-      </div>
+    <>
+      {isFirstRun ? (
+        <FirstRunWelcome onCreateProject={() => setDialogOpen(true)} />
+      ) : (
+        <div className="p-8">
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-semibold text-ink">Projects</h1>
+            <Button onClick={() => setDialogOpen(true)}>New project</Button>
+          </div>
 
-      {isLoading && <p className="mt-8 text-sm text-ink-muted">Loading projects…</p>}
+          {isLoading && <p className="mt-8 text-sm text-ink-muted">Loading projects…</p>}
 
-      {!isLoading && projects?.length === 0 && (
-        <div className="mt-16 flex flex-col items-center gap-2 text-center">
-          <p className="text-sm font-medium text-ink">No projects yet</p>
-          <p className="text-sm text-ink-muted">Create a project to get started.</p>
-        </div>
-      )}
-
-      {!isLoading && projects && projects.length > 0 && (
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <ProjectCard key={project.slug} project={project} onDelete={handleDelete} />
-          ))}
+          {!isLoading && projects && projects.length > 0 && (
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => (
+                <ProjectCard key={project.slug} project={project} onDelete={handleDelete} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -62,6 +64,6 @@ export default function ProjectList() {
           submitting={createProject.isPending}
         />
       )}
-    </div>
+    </>
   );
 }

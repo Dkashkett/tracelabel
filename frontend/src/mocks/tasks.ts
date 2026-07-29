@@ -26,6 +26,7 @@ import type {
 } from "@/api/types";
 import { bumpTaskCount, getProject } from "@/mocks/projects";
 import { createJob } from "@/mocks/imports";
+import type { ExportQuery } from "@/api/client/exports";
 
 const NOW = "2026-07-01T12:00:00Z";
 
@@ -303,10 +304,30 @@ export function startSuggestions(projectSlug: string, name: string, input: Sugge
   return createJob(Math.max(remaining, 1), `Suggesting with ${input.model}…`);
 }
 
-export function exportTask(projectSlug: string, name: string): Blob {
+export function exportTask(projectSlug: string, name: string, query: ExportQuery = {}): Blob {
   const task = getTask(projectSlug, name);
   if (!task) throw new Error(`unknown task '${projectSlug}/${name}'`);
-  const header = task.fields.map((f) => f.name).join(",");
-  const rows = [`target_id,status,${header}`, `demo_item_0,labeled,${task.fields.map(() => "demo").join(",")}`];
-  return new Blob([rows.join("\n")], { type: "text/csv" });
+  const format = query.format ?? "jsonl";
+  const status = query.status === "skipped" ? "skipped" : "labeled";
+  const source = query.joined ? { trace: { id: "demo_trace" }, turns: [] } : {};
+
+  if (format === "jsonl") {
+    const row = {
+      target_id: "demo_item_0",
+      status,
+      values: Object.fromEntries(task.fields.map((field) => [field.name, "demo"])),
+      ...source,
+    };
+    return new Blob([JSON.stringify(row)], { type: "application/x-ndjson" });
+  }
+
+  const sourceColumns = query.joined ? ["trace_id"] : [];
+  const header = ["target_id", "status", ...task.fields.map((field) => field.name), ...sourceColumns];
+  const row = [
+    "demo_item_0",
+    status,
+    ...task.fields.map(() => "demo"),
+    ...(query.joined ? ["demo_trace"] : []),
+  ];
+  return new Blob([[header.join(","), row.join(",")].join("\n")], { type: "text/csv" });
 }

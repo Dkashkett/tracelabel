@@ -15,22 +15,22 @@ Python ≥ 3.10. Add `pip install "tracelabel[ai]"` for LLM-assisted prefill.
 
 **1 · Make a project.** Projects hold your traces and your labeling passes over them.
 
-![Projects](docs/screenshots/project-list.png)
+![Projects](https://raw.githubusercontent.com/Dkashkett/tracelabel/main/docs/screenshots/project-list.png)
 
 **2 · Import traces.** Drop a file, paste JSON, or point at a path. tracelabel detects
 the format and shows you what it found before anything is written.
 
-![Import](docs/screenshots/import.png)
+![Import](https://raw.githubusercontent.com/Dkashkett/tracelabel/main/docs/screenshots/import.png)
 
 **3 · Make a task.** Name it, pick trace-level or turn-level, and build the rubric
 against a live preview of itself. Fields are single-select, multi-select, or text.
 
-![Rubric](docs/screenshots/new-task-rubric.png)
+![Rubric](https://raw.githubusercontent.com/Dkashkett/tracelabel/main/docs/screenshots/new-task-rubric.png)
 
 **4 · Label.** Trace on the left, rubric on the right. `1`–`9` pick options, `r` jumps to
 the text field, `Enter` commits and advances, `s` skips, `?` shows every shortcut.
 
-![Labeling](docs/screenshots/label-view.png)
+![Labeling](https://raw.githubusercontent.com/Dkashkett/tracelabel/main/docs/screenshots/label-view.png)
 
 **5 · Get labels out.**
 
